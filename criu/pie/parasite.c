@@ -1,6 +1,5 @@
 #include <sys/mman.h>
 #include <errno.h>
-#include <signal.h>
 #include <linux/limits.h>
 #include <linux/capability.h>
 #include <sys/mount.h>
