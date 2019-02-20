@@ -1472,6 +1472,35 @@ out:
 	return sk;
 }
 
+int send_obj_flags(int sk, void *obj, int flags)
+{
+	if (send(sk, obj, sizeof(*obj), flags) != sizeof(*obj))
+		return -1;
+	return 0;
+}
+
+int splice_data_to_fd(int fd, int pipefd, unsigned long len)
+{
+	ssize_t ret;
+
+	while (len > 0) {
+		ret = splice(pipefd, NULL, fd, NULL, len, SPLICE_F_MOVE);
+		if (ret < 0) {
+			pr_perror("Unable to spice data");
+			return -1;
+		}
+		if (ret == 0) {
+			pr_err("A pipe was closed unexpectedly\n");
+			return -1;
+		}
+
+		pr_debug("\tSpliced: %lu bytes\n", (unsigned long)ret);
+		len -= ret;
+	}
+
+	return 0;
+}
+
 int epoll_add_rfd(int epfd, struct epoll_rfd *rfd)
 {
 	struct epoll_event ev;

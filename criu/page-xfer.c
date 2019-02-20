@@ -129,41 +129,21 @@ static inline u32 decode_ps_flags(u32 cmd)
 	return cmd >> PS_CMD_BITS;
 }
 
-static inline int send_psi_flags(int sk, struct page_server_iov *pi, int flags)
-{
-	if (send(sk, pi, sizeof(*pi), flags) != sizeof(*pi)) {
-		pr_perror("Can't send PSI %d to server", pi->cmd);
-		return -1;
-	}
-
-	return 0;
-}
-
 static inline int send_psi(int sk, struct page_server_iov *pi)
 {
-	return send_psi_flags(sk, pi, 0);
+	int ret = send_obj_flags(sk, pi, 0);
+	if (ret)
+		pr_perror("Can't send PSI %d to server", pi->cmd);
+	return ret;
 }
 
 /* page-server xfer */
 static int write_pages_to_server(struct page_xfer *xfer,
 		int p, unsigned long len)
 {
-	ssize_t ret, left = len;
-
-	pr_debug("Splicing %lu bytes / %lu pages into socket\n", len, len / PAGE_SIZE);
-
-	while (left > 0) {
-		ret = splice(p, NULL, xfer->sk, NULL, left, SPLICE_F_MOVE);
-		if (ret < 0) {
-			pr_perror("Can't write pages to socket");
-			return -1;
-		}
-
-		pr_debug("\tSpliced: %lu bytes sent\n", (unsigned long)ret);
-		left -= ret;
-	}
-
-	return 0;
+	pr_debug("Splicing %lu bytes / %lu pages into socket\n",
+		len, len / PAGE_SIZE);
+	return splice_data_to_fd(xfer->sk, p, len);
 }
 
 static int write_pagemap_to_server(struct page_xfer *xfer, struct iovec *iov, u32 flags)
@@ -221,25 +201,7 @@ static int open_page_server_xfer(struct page_xfer *xfer, int fd_type, unsigned l
 static int write_pages_loc(struct page_xfer *xfer,
 		int p, unsigned long len)
 {
-	ssize_t ret;
-	ssize_t curr = 0;
-
-	while (1) {
-		ret = splice(p, NULL, img_raw_fd(xfer->pi), NULL, len - curr, SPLICE_F_MOVE);
-		if (ret == -1) {
-			pr_perror("Unable to spice data");
-			return -1;
-		}
-		if (ret == 0) {
-			pr_err("A pipe was closed unexpectedly\n");
-			return -1;
-		}
-		curr += ret;
-		if (curr == len)
-			break;
-	}
-
-	return 0;
+	return splice_data_to_fd(img_raw_fd(xfer->pi), p, len);
 }
 
 static int check_pagehole_in_parent(struct page_read *p, struct iovec *iov)
@@ -1239,7 +1201,7 @@ int request_remote_pages(unsigned long img_id, unsigned long addr, int nr_pages)
 	};
 
 	/* XXX: why MSG_DONTWAIT here? */
-	if (send_psi_flags(page_server_sk, &pi, MSG_DONTWAIT))
+	if (send_obj_flags(page_server_sk, &pi, MSG_DONTWAIT))
 		return -1;
 
 	tcp_nodelay(page_server_sk, true);

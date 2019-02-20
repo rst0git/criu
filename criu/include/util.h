@@ -294,6 +294,9 @@ int setup_tcp_server(char *type);
 int run_tcp_server(bool daemon_mode, int *ask, int cfd, int sk);
 int setup_tcp_client(void);
 
+int send_obj_flags(int sk, void *obj, int flags);
+int splice_data_to_fd(int fd, int pipefd, unsigned long len);
+
 #define LAST_PID_PATH		"sys/kernel/ns_last_pid"
 #define PID_MAX_PATH		"sys/kernel/pid_max"
 
