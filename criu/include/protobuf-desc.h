@@ -64,7 +64,6 @@ enum {
 	PB_REMOTE_IMAGE,        /* Header for images sent from proxy to cache.*/
 	PB_LOCAL_IMAGE,         /* Header for reading/writing images from/to proxy or cache. */
 	PB_LOCAL_IMAGE_REPLY,	/* Header for reading/writing images reply. */
-	PB_SNAPSHOT_ID,         /* Contains a single id. Used for reading/writing ids from proxy or cache. */
 
 	/* PB_AUTOGEN_STOP */
 
