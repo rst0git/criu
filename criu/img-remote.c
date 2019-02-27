@@ -18,7 +18,7 @@
 		     (f) == O_APPEND ? "append" : "write")
 
 // List of images already in memory.
-static LIST_HEAD(rimg_head);
+static struct list_head rimg_set[CR_FD_MAX];
 
 // List of local operations currently in-progress.
 static LIST_HEAD(rop_inprogress);
@@ -58,12 +58,12 @@ struct rimage *get_rimg_by_name(const char *path, int type)
 {
 	struct rimage *rimg = NULL;
 
-	list_for_each_entry(rimg, &rimg_head, l) {
-		if (rimg->type == type
-			&& !strncmp(rimg->path, path, PATH_MAX)) {
-			return rimg;
+	if (rimg_set[type].next)
+		list_for_each_entry(rimg, &(rimg_set[type]), l) {
+			if (!strncmp(rimg->path, path, PATH_MAX)) {
+				return rimg;
+			}
 		}
-	}
 	return NULL;
 }
 
@@ -577,6 +577,15 @@ static inline void finish_proxy_read(struct roperation *rop)
 	}
 }
 
+static inline void append_rimg(struct roperation *rop)
+{
+	BUG_ON(rop->type > CR_FD_MAX || rop->type < 0);
+	if (!rimg_set[rop->type].next)
+		INIT_LIST_HEAD(&rimg_set[rop->type]);
+	list_add_tail(&(rop->rimg->l), &rimg_set[rop->type]);
+}
+
+
 static inline void finish_proxy_write(struct roperation *rop)
 {
 	// Normal image received, forward it.
@@ -584,7 +593,7 @@ static inline void finish_proxy_write(struct roperation *rop)
 		rop->path, rop->type, remote_sk, rop->flags, false);
 
 	// Add image to list of images.
-	list_add_tail(&(rop->rimg->l), &rimg_head);
+	append_rimg(rop);
 
 	rop_set_rimg(rop_to_forward, rop->rimg);
 	if (list_empty(&rop_forwarding)) {
@@ -601,7 +610,7 @@ static void finish_cache_write(struct roperation *rop)
 	event_set(epoll_fd, EPOLL_CTL_ADD, remote_sk, EPOLLIN, &remote_sk);
 
 	// Add image to list of images.
-	list_add_tail(&(rop->rimg->l), &rimg_head);
+	append_rimg(rop);
 
 	if (prop != NULL) {
 		pr_info("\t[fd=%d] Resuming pending %s for %s\n",
