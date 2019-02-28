@@ -380,7 +380,7 @@ static inline int do_open_remote_image(char *path, int type, int flags)
 	if (flags == O_RSTR)
 		ret = read_remote_image_connection(path, type);
 	else
-		ret = write_remote_image_connection(path, type, O_WRONLY);
+		ret = write_remote_image_connection(path, type);
 
 	return ret;
 }
