@@ -1,14 +1,9 @@
 syntax = "proto2";
 
-message local_image_entry {
-	required string name		= 1;
-	required uint64 type		= 2;
-}
-
 message remote_image_entry {
 	required string name		= 1;
 	required uint64 type		= 2;
-	required uint64 size		= 3;
+	optional uint64 size		= 3;
 }
 
 message local_image_reply_entry {

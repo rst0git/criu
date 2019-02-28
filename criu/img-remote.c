@@ -163,16 +163,6 @@ static inline int64_t pb_read_obj(int fd, void **pobj, int type)
 	return do_pb_read_one(&img, pobj, type, true);
 }
 
-static inline int64_t write_header(int fd, char *path, int type)
-{
-	LocalImageEntry li = LOCAL_IMAGE_ENTRY__INIT;
-
-	li.name = path;
-	li.type = type;
-	pr_debug("write header: %s\n", (path == FINISH) ? "(null)" : path);
-	return pb_write_obj(fd, &li, PB_LOCAL_IMAGE);
-}
-
 static inline int64_t write_reply_header(int fd, int error)
 {
 	LocalImageReplyEntry lir = LOCAL_IMAGE_REPLY_ENTRY__INIT;
@@ -181,41 +171,18 @@ static inline int64_t write_reply_header(int fd, int error)
 	return pb_write_obj(fd, &lir, PB_LOCAL_IMAGE_REPLY);
 }
 
-static inline int64_t write_remote_header(int fd, char *path, int type,
-	uint64_t size)
+static inline int64_t write_header(int fd, char *path, int type, uint64_t size)
 {
 	RemoteImageEntry ri = REMOTE_IMAGE_ENTRY__INIT;
 
 	ri.name = path;
 	ri.type = type;
-	ri.size = size;
-	return pb_write_obj(fd, &ri, PB_REMOTE_IMAGE);
-}
-
-static inline int64_t read_header(int fd, char *path, int *type)
-{
-	LocalImageEntry *li;
-	int ret = pb_read_obj(fd, (void **)&li, PB_LOCAL_IMAGE);
-
-	if (ret > 0) {
-		strncpy(path, li->name, PATH_MAX - 1);
-		path[PATH_MAX - 1] = 0;
-		*type = li->type;
+	if (size > 0) {
+		ri.has_size = true;
+		ri.size = size;
 	}
-	pr_debug("read header: %s\n", (path[0] == FINISH) ? "(null)" : path);
-	free(li);
-	return ret;
-}
-
-static inline int64_t read_reply_header(int fd, int *error)
-{
-	LocalImageReplyEntry *lir;
-	int ret = pb_read_obj(fd, (void **)&lir, PB_LOCAL_IMAGE_REPLY);
-
-	if (ret > 0)
-		*error = lir->error;
-	free(lir);
-	return ret;
+	pr_debug("send header: %s\n", (path == FINISH) ? "(null)" : path);
+	return pb_write_obj(fd, &ri, PB_REMOTE_IMAGE);
 }
 
 static inline int64_t read_remote_header(int fd, char *path,  int *type,
@@ -230,6 +197,17 @@ static inline int64_t read_remote_header(int fd, char *path,  int *type,
 		*size = ri->size;
 	}
 	free(ri);
+	return ret;
+}
+
+static inline int64_t read_reply_header(int fd, int *error)
+{
+	LocalImageReplyEntry *lir;
+	int ret = pb_read_obj(fd, (void **)&lir, PB_LOCAL_IMAGE_REPLY);
+
+	if (ret > 0)
+		*error = lir->error;
+	free(lir);
 	return ret;
 }
 
@@ -387,7 +365,7 @@ static void forward_remote_image(struct roperation *rop)
 	fd_set_nonblocking(rop->fd, false);
 
 	pr_info("Forward %s (%" PRIu64 " bytes)\n", rop->path, rop->size);
-	ret = write_remote_header(rop->fd, rop->path, rop->type, rop->size);
+	ret = write_header(rop->fd, rop->path, rop->type, rop->size);
 
 	if (ret < 0) {
 		pr_perror("Error writing header for %s", rop->path);
@@ -403,24 +381,26 @@ static void forward_remote_image(struct roperation *rop)
 
 static void handle_remote_accept(int fd)
 {
-	char path[PATH_MAX];
-	uint64_t size = 0;
-	int type = 0;
+	RemoteImageEntry *ri;
 	int64_t ret;
 	struct roperation* rop = NULL;
 
 	// Set blocking during the setup.
 	fd_set_nonblocking(fd, false);
 
-	ret = read_remote_header(fd, path, &type, &size);
+	ret = pb_read_obj(fd, (void **)&ri, PB_REMOTE_IMAGE);
 	if (ret < 0) {
 		pr_perror("Unable to receive remote header from image proxy");
-		goto err;
+		free(ri);
+		close(fd);
+		return;
 	}
+
 	/* This means that the no more images are coming. */
-	else if (!ret) {
+	if (!ret) {
 		finished_remote = true;
 		pr_info("Image Proxy connection closed.\n");
+		free(ri);
 		return;
 	}
 
@@ -428,22 +408,19 @@ static void handle_remote_accept(int fd)
 	fd_set_nonblocking(fd, true);
 
 	forwarding = true;
-	rop = handle_accept_write(fd, path, type, false, size);
+	rop = handle_accept_write(fd, ri->name, ri->type, false, ri->size);
+	free(ri);
 
 	if (rop != NULL) {
 		list_add_tail(&(rop->l), &rop_inprogress);
 		event_set(epoll_fd, EPOLL_CTL_ADD, rop->fd, EPOLLIN, rop);
 	}
-	return;
-err:
-	close(fd);
 }
 
 static void handle_local_accept(int fd)
 {
 	int cli_fd;
-	char path[PATH_MAX];
-	int type = 0;
+	RemoteImageEntry *ri;
 	struct sockaddr_in cli_addr;
 	socklen_t clilen = sizeof(cli_addr);
 	struct roperation *rop = NULL;
@@ -454,12 +431,12 @@ static void handle_local_accept(int fd)
 		return;
 	}
 
-	if (read_header(cli_fd, path, &type) < 0) {
+	if (pb_read_obj(cli_fd, (void **)&ri, PB_REMOTE_IMAGE) < 0) {
 		pr_err("Error reading local image header\n");
 		goto err;
 	}
 
-	if (path[0] == FINISH) {
+	if (ri->name[0] == FINISH) {
 		close(cli_fd);
 		finish_local();
 		return;
@@ -467,10 +444,11 @@ static void handle_local_accept(int fd)
 
 	if (restoring)
 		/* Read case while restoring (img-cache) */
-		rop = handle_accept_cache_read(cli_fd, path, type);
+		rop = handle_accept_cache_read(cli_fd, ri->name, ri->type);
 	else
 		/* Write case (img-proxy) */
-		rop = handle_accept_proxy_write(cli_fd, path, type);
+		rop = handle_accept_proxy_write(cli_fd, ri->name, ri->type);
+	free(ri);
 
 	// If we have an operation. Check if we are ready to start or not.
 	if (rop != NULL) {
@@ -822,7 +800,7 @@ int read_remote_image_connection(char *path, int type)
 		return -1;
 	}
 
-	if (write_header(sockfd, path, type) < 0) {
+	if (write_header(sockfd, path, type, 0) < 0) {
 		pr_err("Error writing header for %s\n", path);
 		return -1;
 	}
@@ -852,7 +830,7 @@ int write_remote_image_connection(char *path, int type)
 	if (sockfd < 0)
 		return -1;
 
-	if (write_header(sockfd, path, type) < 0) {
+	if (write_header(sockfd, path, type, 0) < 0) {
 		pr_err("Error writing header for %s\n", path);
 		return -1;
 	}
