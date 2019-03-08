@@ -29,15 +29,24 @@ Lsmtype image_lsm;
 int check_img_inventory(void)
 {
 	int ret = -1;
-	struct cr_img *img;
 	InventoryEntry *he;
 
-	img = open_image(CR_FD_INVENTORY, O_RSTR);
-	if (!img)
-		return -1;
+	if (opts.remote) {
+		if (remote_read_one(imgset_template[CR_FD_INVENTORY].fmt, PB_INVENTORY, (void **)&he)) {
+			pr_err("Failed to open inventory\n");
+			return -1;
+		}
+	} else {
+		struct cr_img *img = open_image(CR_FD_INVENTORY, O_RSTR);
+		if (!img)
+			return -1;
 
-	if (pb_read_one(img, &he, PB_INVENTORY) < 0)
-		goto out_close;
+		if (pb_read_one(img, &he, PB_INVENTORY) < 0) {
+			close_image(img);
+			return ret;
+		}
+		close_image(img);
+	}
 
 	if (!he->has_fdinfo_per_id || !he->fdinfo_per_id) {
 		pr_err("Too old image, no longer supported\n");
@@ -86,20 +95,46 @@ int check_img_inventory(void)
 out_err:
 	inventory_entry__free_unpacked(he, NULL);
 out_close:
-	close_image(img);
 	return ret;
+}
+
+int remote_send_inventory(int type, InventoryEntry *he)
+{
+	void *buf;
+	long unsigned len;
+	int fd;
+
+	len = inventory_entry__get_packed_size(he);
+	buf = xmalloc(len);
+	if (!buf)
+		return -1;
+	if (inventory_entry__pack(he, buf) != len) {
+		pr_err("Failed to serialize inventory object\n");
+		return -1;
+	}
+
+	fd = write_remote_image_connection("inventory.img", type, len);
+	fd_set_nonblocking(fd, false);
+
+	pr_info("Sending inventory with size: %ld\n", len);
+	send(fd, buf, len, 0);
+	xfree(buf);
+	close(fd);
+	return 0;
 }
 
 int write_img_inventory(InventoryEntry *he)
 {
 	struct cr_img *img;
 
+	if (opts.remote)
+		return remote_send_inventory(PB_INVENTORY, he);
+
 	pr_info("Writing image inventory (version %u)\n", CRTOOLS_IMAGES_V1);
 
 	img = open_image(CR_FD_INVENTORY, O_DUMP);
 	if (!img)
 		return -1;
-
 	if (pb_write_one(img, he, PB_INVENTORY) < 0)
 		return -1;
 
@@ -284,6 +319,24 @@ struct cr_imgset *cr_glob_imgset_open(int mode)
 	return cr_imgset_open(-1 /* ignored */, GLOB, mode);
 }
 
+static inline u32 head_magic(int oflags)
+{
+	return oflags & O_SERVICE ? IMG_SERVICE_MAGIC : IMG_COMMON_MAGIC;
+}
+
+static int img_write_magic(struct cr_img *img, int oflags, int type)
+{
+	if (img_common_magic && (type != CR_FD_INVENTORY)) {
+		u32 cmagic;
+
+		cmagic = head_magic(oflags);
+		if (write_img(img, &cmagic))
+			return -1;
+	}
+
+	return write_img(img, &imgset_template[type].magic);
+}
+
 static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long flags, char *path);
 
 struct cr_img *open_image_at(int dfd, int type, unsigned long flags, ...)
@@ -327,11 +380,6 @@ struct cr_img *open_image_at(int dfd, int type, unsigned long flags, ...)
 	return img;
 }
 
-static inline u32 head_magic(int oflags)
-{
-	return oflags & O_SERVICE ? IMG_SERVICE_MAGIC : IMG_COMMON_MAGIC;
-}
-
 static int img_check_magic(struct cr_img *img, int oflags, int type, char *path)
 {
 	u32 magic;
@@ -357,19 +405,6 @@ static int img_check_magic(struct cr_img *img, int oflags, int type, char *path)
 	return 0;
 }
 
-static int img_write_magic(struct cr_img *img, int oflags, int type)
-{
-	if (img_common_magic && (type != CR_FD_INVENTORY)) {
-		u32 cmagic;
-
-		cmagic = head_magic(oflags);
-		if (write_img(img, &cmagic))
-			return -1;
-	}
-
-	return write_img(img, &imgset_template[type].magic);
-}
-
 static inline int do_open_remote_image(char *path, int type, int flags)
 {
 	int ret;
@@ -378,9 +413,9 @@ static inline int do_open_remote_image(char *path, int type, int flags)
 		(flags == O_RSTR) ? "RDONLY" : "WRONLY", path);
 
 	if (flags == O_RSTR)
-		ret = read_remote_image_connection(path, type);
+		ret = get_img_from_cache(path, type);
 	else
-		ret = write_remote_image_connection(path, type);
+		ret = write_remote_image_connection(path, type, 0);
 
 	return ret;
 }
@@ -429,9 +464,11 @@ static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long of
 			ret = userns_call(userns_openat, UNS_FDOUT, &pa, sizeof(struct openat_args), dfd);
 			if (ret < 0)
 				errno = pa.err;
-		} else
+		} else {
 			ret = openat(dfd, path, flags, CR_FD_PERM);
+		}
 	}
+
 	if (ret < 0) {
 		if (!(flags & O_CREAT) && (errno == ENOENT || ret == -ENOENT)) {
 			pr_info("No %s image\n", path);
@@ -500,8 +537,10 @@ void close_image(struct cr_img *img)
 		 */
 		unlinkat(get_service_fd(IMG_FD_OFF), img->path, 0);
 		xfree(img->path);
-	} else if (!empty_image(img))
+	} else if (!empty_image(img)) {
+		pr_debug("Closing image %d\n", img->_x.fd);
 		bclose(&img->_x);
+	}
 
 	xfree(img);
 }

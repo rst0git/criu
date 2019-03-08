@@ -2411,10 +2411,10 @@ int cr_restore_tasks(void)
 
 	ret = restore_root_task(root_item);
 
-	if (opts.remote && (finish_remote_restore() < 0)) {
+	/*if (opts.remote && (finish_remote_restore() < 0)) {
 		pr_err("Finish remote restore failed.\n");
 		goto err;
-	}
+	}*/
 err:
 	cr_plugin_fini(CR_PLUGIN_STAGE__RESTORE, ret);
 	return ret;

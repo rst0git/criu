@@ -1665,6 +1665,11 @@ static int cr_dump_finish(int ret)
 
 	close_cr_imgset(&glob_imgset);
 
+	if (opts.remote && (finish_remote_dump() < 0)) {
+		pr_err("Finish remote dump failed.\n");
+		return post_dump_ret ? : 1;
+	}
+
 	if (bfd_flush_images())
 		ret = -1;
 
@@ -1733,11 +1738,6 @@ static int cr_dump_finish(int ret)
 	free_userns_maps();
 
 	close_service_fd(CR_PROC_FD_OFF);
-
-	if (opts.remote && (finish_remote_dump() < 0)) {
-		pr_err("Finish remote dump failed.\n");
-		return post_dump_ret ? : 1;
-	}
 
 	if (ret) {
 		pr_err("Dumping FAILED.\n");

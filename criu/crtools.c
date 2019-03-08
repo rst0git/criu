@@ -221,6 +221,15 @@ int main(int argc, char *argv[], char *envp[])
 		if (opts.tree_id)
 			pr_warn("Using -t with criu restore is obsoleted\n");
 
+		if (opts.remote) {
+			if (opts.ps_socket == -1 && !opts.port)
+				goto opt_port_missing;
+			if (image_cache()) {
+				pr_err("Image cache faild\n");
+				return 1;
+			}
+		}
+
 		ret = cr_restore_tasks();
 		if (ret == 0 && opts.exec_cmd) {
 			close_pid_proc();
@@ -240,12 +249,6 @@ int main(int argc, char *argv[], char *envp[])
 
 	if (!strcmp(argv[optind], "page-server"))
 		return cr_page_server(opts.daemon_mode, false, -1) != 0;
-
-	if (!strcmp(argv[optind], "image-cache")) {
-		if (!opts.port)
-			goto opt_port_missing;
-		return image_cache(opts.daemon_mode, DEFAULT_CACHE_SOCKET);
-	}
 
 	if (!strcmp(argv[optind], "image-proxy")) {
 		if (!opts.addr) {
@@ -296,7 +299,6 @@ usage:
 "  criu service [<options>]\n"
 "  criu dedup\n"
 "  criu lazy-pages -D DIR [<options>]\n"
-"  criu image-cache [<options>]\n"
 "  criu image-proxy [<options>]\n"
 "\n"
 "Commands:\n"
@@ -310,7 +312,6 @@ usage:
 "  cpuinfo dump   writes cpu information into image file\n"
 "  cpuinfo check  validates cpu information read from image file\n"
 "  image-proxy    launch dump-side proxy to sent images\n"
-"  image-cache    launch restore-side cache to receive images\n"
 	);
 
 	if (usage_error) {
@@ -363,8 +364,7 @@ usage:
 "                            macvlan[IFNAME]:OUTNAME\n"
 "                            mnt[COOKIE]:ROOT\n"
 "\n"
-"  --remote              dump/restore images directly to/from remote node using\n"
-"                        image-proxy/image-cache\n"
+"  --remote              dump/restore images directly to/from remote node\n"
 "* Special resources support:\n"
 "     --" SK_EST_PARAM "  checkpoint/restore established TCP connections\n"
 "     --" SK_INFLIGHT_PARAM "   skip (ignore) in-flight TCP connections\n"
