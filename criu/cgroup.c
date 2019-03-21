@@ -17,6 +17,7 @@
 #include "criu-log.h"
 #include "util.h"
 #include "imgset.h"
+#include "img-remote.h"
 #include "util-pie.h"
 #include "namespaces.h"
 #include "seize.h"
@@ -921,7 +922,26 @@ int dump_cgroups(void)
 	}
 
 	pr_info("Writing CG image\n");
-	ret = pb_write_one(img_from_set(glob_imgset, CR_FD_CGROUP), &cg, PB_CGROUP);
+	if (!opts.remote) {
+		ret = pb_write_one(img_from_set(glob_imgset, CR_FD_CGROUP), &cg, PB_CGROUP);
+	} else {
+		long unsigned len = cgroup_entry__get_packed_size(&cg);
+		void *buf = xmalloc(len);
+		if (!buf)
+			return -1;
+		if (cgroup_entry__pack(&cg, buf) != len) {
+			pr_err("Failed to serialize cgroup object\n");
+			return -1;
+		}
+
+		int fd = write_remote_image_connection("cgroup.img", CR_FD_CGROUP, len);
+		fd_set_nonblocking(fd, false);
+
+		pr_info("Sending cgroup object with size: %ld\n", len);
+		ret = (send(fd, buf, len, 0) != len);
+		xfree(buf);
+		close(fd);
+	}
 err:
 	free_sets(&cg, cg.n_sets);
 	xfree(cg.controllers);
@@ -1862,14 +1882,22 @@ int prepare_cgroup(void)
 	struct cr_img *img;
 	CgroupEntry *ce;
 
-	img = open_image(CR_FD_CGROUP, O_RSTR);
-	if (!img)
-		return -1;
+	if (!opts.remote) {
+		img = open_image(CR_FD_CGROUP, O_RSTR);
+		if (!img)
+			return -1;
 
-	ret = pb_read_one_eof(img, &ce, PB_CGROUP);
-	close_image(img);
-	if (ret <= 0) /* Zero is OK -- no sets there. */
-		return ret;
+		ret = pb_read_one_eof(img, &ce, PB_CGROUP);
+		close_image(img);
+
+		if (ret <= 0) /* Zero is OK -- no sets there. */
+			return ret;
+	} else {
+		if (remote_read_one(imgset_template[CR_FD_CGROUP].fmt, PB_CGROUP, (void **)&ce)) {
+			pr_debug("No cgroup image\n");
+			return 0;
+		}
+	}
 
 	if (rewrite_cgroup_roots(ce))
 		return -1;

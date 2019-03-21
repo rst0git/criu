@@ -282,6 +282,17 @@ int remote_read_one(const char *path, int type, void **obj)
 
 		list_del(&img->l);
 		break;
+	case PB_CGROUP:
+		img = get_img(path, CR_FD_CGROUP);
+		if (!img)
+			return -1;
+		*obj = cr_pb_descs[PB_CGROUP].unpack(NULL, img->size, img->buffer);
+		if (*obj == NULL) {
+			pr_err("Failed to unpack incomming message\n");
+			return -1;
+		}
+		list_del(&img->l);
+		break;
 	default:
 		return -1;
 	}
