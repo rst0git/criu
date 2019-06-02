@@ -337,8 +337,9 @@ struct cr_img *open_image_at(int dfd, int type, unsigned long flags, ...)
 		img->oflags = oflags;
 		img->path = xstrdup(path);
 		return img;
-	} else
-		img->fd = EMPTY_IMG_FD;
+	}
+
+	img->fd = EMPTY_IMG_FD;
 
 	if (do_open_image(img, dfd, type, oflags, path)) {
 		close_image(img);
@@ -391,46 +392,17 @@ static int img_write_magic(struct cr_img *img, int oflags, int type)
 	return write_img(img, &imgset_template[type].magic);
 }
 
-int do_open_remote_image(int dfd, char *path, int flags)
+static inline int do_open_remote_image(char *path, int flags)
 {
-	char *snapshot_id = NULL;
-	int ret, save;
+	int ret;
 
-	/* When using namespaces, the current dir is changed so we need to
-	 * change to previous working dir and back to correctly open the image
-	 * proxy and cache sockets. */
-	save = open(".", O_RDONLY);
-	if (save < 0) {
-		pr_perror("unable to open current working directory");
-		return -1;
-	}
+	pr_debug("Open remote image %s [%s]\n",
+		(flags == O_RSTR) ? "RDONLY" : "WRONLY", path);
 
-	if (fchdir(get_service_fd(IMG_FD_OFF)) < 0) {
-		pr_perror("fchdir to dfd failed!\n");
-		close(save);
-		return -1;
-	}
-
-	snapshot_id = get_snapshot_id_from_idx(dfd);
-
-	if (snapshot_id == NULL)
-		ret = -1;
-	else if (flags == O_RDONLY) {
-		pr_debug("do_open_remote_image RDONLY path=%s snapshot_id=%s\n",
-				  path, snapshot_id);
-		ret = read_remote_image_connection(snapshot_id, path);
-	} else {
-		pr_debug("do_open_remote_image WRONLY path=%s snapshot_id=%s\n",
-				  path, snapshot_id);
-		ret = write_remote_image_connection(snapshot_id, path, O_WRONLY);
-	}
-
-	if (fchdir(save) < 0) {
-		pr_perror("fchdir to save failed");
-		close(save);
-		return -1;
-	}
-	close(save);
+	if (flags == O_RSTR)
+		ret = read_remote_image_connection(path);
+	else
+		ret = write_remote_image_connection(path, O_WRONLY);
 
 	return ret;
 }
@@ -461,7 +433,7 @@ static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long of
 	flags = oflags & ~(O_NOBUF | O_SERVICE | O_FORCE_LOCAL);
 
 	if (opts.remote && !(oflags & O_FORCE_LOCAL))
-		ret = do_open_remote_image(dfd, path, flags);
+		ret = do_open_remote_image(path, flags);
 	else {
 		/*
 		 * For pages images dedup we need to open images read-write on
@@ -584,9 +556,7 @@ int open_image_dir(char *dir)
 		return -1;
 	fd = ret;
 
-	if (opts.remote) {
-		init_snapshot_id(dir);
-	} else if (opts.img_parent) {
+	if (!opts.remote && opts.img_parent) {
 		ret = symlinkat(opts.img_parent, fd, CR_PARENT_LINK);
 		if (ret < 0 && errno != EEXIST) {
 			pr_perror("Can't link parent snapshot");
