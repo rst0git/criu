@@ -628,24 +628,12 @@ static int try_open_parent(int dfd, unsigned long id, struct page_read *pr, int 
 	int pfd, ret;
 	struct page_read *parent = NULL;
 
-	if (opts.remote) {
-		/* Note: we are replacing a real directory FD for a snapshot_id
-		 * index. Since we need the parent of the current snapshot_id,
-		 * we want the current snapshot_id index minus one. It is
-		 * possible that dfd is already a snapshot_id index. We test it
-		 * by comparing it to the service FD. When opening an image (see
-		 * do_open_image) we convert the snapshot_id index into a real
-		 * snapshot_id.
-		 */
-		pfd = dfd == get_service_fd(IMG_FD_OFF) ?
-			get_curr_snapshot_id_idx() - 1 : dfd - 1;
-		if (pfd < 0)
-			goto out;
-	} else {
-		pfd = openat(dfd, CR_PARENT_LINK, O_RDONLY);
-		if (pfd < 0 && errno == ENOENT)
-			goto out;
-	}
+	if (opts.remote)
+		goto out;
+
+	pfd = openat(dfd, CR_PARENT_LINK, O_RDONLY);
+	if (pfd < 0 && errno == ENOENT)
+		goto out;
 
 	parent = xmalloc(sizeof(*parent));
 	if (!parent)
@@ -660,8 +648,7 @@ static int try_open_parent(int dfd, unsigned long id, struct page_read *pr, int 
 		parent = NULL;
 	}
 
-	if (!opts.remote)
-		close(pfd);
+	close(pfd);
 out:
 	pr->parent = parent;
 	return 0;
@@ -669,8 +656,7 @@ out:
 err_free:
 	xfree(parent);
 err_cl:
-	if (!opts.remote)
-		close(pfd);
+	close(pfd);
 	return -1;
 }
 

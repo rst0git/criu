@@ -31,12 +31,6 @@ static LIST_HEAD(rop_pending);
 // being forwarded.
 static LIST_HEAD(rop_forwarding);
 
-// List of snapshots (useful when doing incremental restores/dumps)
-static LIST_HEAD(snapshot_head);
-
-// Snapshot id (setup at launch time by dump or restore).
-static char *snapshot_id;
-
 // True if restoring (cache := true; proxy := false).
 bool restoring = true;
 
@@ -60,38 +54,12 @@ static struct epoll_event *events;
 static int64_t recv_image_async(struct roperation *op);
 static int64_t send_image_async(struct roperation *op);
 
-/* A snapshot is a dump or pre-dump operation. Each snapshot is identified by an
- * ID which corresponds to the working directory specified by the user.
- */
-struct snapshot {
-	char snapshot_id[PATH_MAX];
-	struct list_head l;
-};
-
-static struct snapshot *new_snapshot(char *snapshot_id)
-{
-	struct snapshot *s = xmalloc(sizeof(struct snapshot));
-
-	if (!s)
-		return NULL;
-
-	strncpy(s->snapshot_id, snapshot_id, PATH_MAX - 1);
-	s->snapshot_id[PATH_MAX - 1]= '\0';
-	return s;
-}
-
-static inline void add_snapshot(struct snapshot *snapshot)
-{
-	list_add_tail(&(snapshot->l), &snapshot_head);
-}
-
-struct rimage *get_rimg_by_name(const char *snapshot_id, const char *path)
+struct rimage *get_rimg_by_name(const char *path)
 {
 	struct rimage *rimg = NULL;
 
 	list_for_each_entry(rimg, &rimg_head, l) {
-		if (!strncmp(rimg->path, path, PATH_MAX) &&
-			!strncmp(rimg->snapshot_id, snapshot_id, PATH_MAX)) {
+		if (!strncmp(rimg->path, path, PATH_MAX)) {
 			return rimg;
 		}
 	}
@@ -99,13 +67,12 @@ struct rimage *get_rimg_by_name(const char *snapshot_id, const char *path)
 }
 
 static inline struct roperation *get_rop_by_name(struct list_head *head,
-	const char *snapshot_id, const char *path)
+	const char *path)
 {
 	struct roperation *rop = NULL;
 
 	list_for_each_entry(rop, head, l) {
-		if (!strncmp(rop->path, path, PATH_MAX) &&
-			!strncmp(rop->snapshot_id, snapshot_id, PATH_MAX)) {
+		if (!strncmp(rop->path, path, PATH_MAX)) {
 			return rop;
 		}
 	}
@@ -198,13 +165,11 @@ static inline int64_t pb_read_obj(int fd, void **pobj, int type)
 	return do_pb_read_one(&img, pobj, type, true);
 }
 
-static inline int64_t write_header(int fd, char *snapshot_id, char *path,
-	int flags)
+static inline int64_t write_header(int fd, char *path, int flags)
 {
 	LocalImageEntry li = LOCAL_IMAGE_ENTRY__INIT;
 
 	li.name = path;
-	li.snapshot_id = snapshot_id;
 	li.open_mode = flags;
 	return pb_write_obj(fd, &li, PB_LOCAL_IMAGE);
 }
@@ -217,27 +182,23 @@ static inline int64_t write_reply_header(int fd, int error)
 	return pb_write_obj(fd, &lir, PB_LOCAL_IMAGE_REPLY);
 }
 
-static inline int64_t write_remote_header(int fd, char *snapshot_id,
-	char *path, int flags, uint64_t size)
+static inline int64_t write_remote_header(int fd, char *path, int flags,
+	uint64_t size)
 {
 	RemoteImageEntry ri = REMOTE_IMAGE_ENTRY__INIT;
 
 	ri.name = path;
-	ri.snapshot_id = snapshot_id;
 	ri.open_mode = flags;
 	ri.size = size;
 	return pb_write_obj(fd, &ri, PB_REMOTE_IMAGE);
 }
 
-static inline int64_t read_header(int fd, char *snapshot_id, char *path,
-	int *flags)
+static inline int64_t read_header(int fd, char *path, int *flags)
 {
 	LocalImageEntry *li;
 	int ret = pb_read_obj(fd, (void **)&li, PB_LOCAL_IMAGE);
 
 	if (ret > 0) {
-		strncpy(snapshot_id, li->snapshot_id, PATH_MAX - 1);
-		snapshot_id[PATH_MAX - 1] = 0;
 		strncpy(path, li->name, PATH_MAX - 1);
 		path[PATH_MAX - 1] = 0;
 		*flags = li->open_mode;
@@ -257,14 +218,13 @@ static inline int64_t read_reply_header(int fd, int *error)
 	return ret;
 }
 
-static inline int64_t read_remote_header(int fd, char *snapshot_id, char *path,
-	int *flags, uint64_t *size)
+static inline int64_t read_remote_header(int fd, char *path, int *flags,
+	uint64_t *size)
 {
 	RemoteImageEntry *ri;
 	int ret = pb_read_obj(fd, (void **)&ri, PB_REMOTE_IMAGE);
 
 	if (ret > 0) {
-		strncpy(snapshot_id, ri->snapshot_id, PATH_MAX - 1);
 		strncpy(path, ri->name, PATH_MAX - 1);
 		*flags = ri->open_mode;
 		*size = ri->size;
@@ -273,7 +233,7 @@ static inline int64_t read_remote_header(int fd, char *snapshot_id, char *path,
 	return ret;
 }
 
-static struct rimage *new_remote_image(char *path, char *snapshot_id)
+static struct rimage *new_remote_image(char *path)
 {
 	struct rimage *rimg = xzalloc(sizeof(struct rimage));
 	struct rbuf *buf = xzalloc(sizeof(struct rbuf));
@@ -282,9 +242,7 @@ static struct rimage *new_remote_image(char *path, char *snapshot_id)
 		goto err;
 
 	strncpy(rimg->path, path, PATH_MAX -1 );
-	strncpy(rimg->snapshot_id, snapshot_id, PATH_MAX - 1);
 	rimg->path[PATH_MAX - 1] = '\0';
-	rimg->snapshot_id[PATH_MAX - 1] = '\0';
 	INIT_LIST_HEAD(&(rimg->buf_head));
 	list_add_tail(&(buf->l), &(rimg->buf_head));
 	rimg->curr_fwd_buf = buf;
@@ -296,8 +254,8 @@ err:
 	return NULL;
 }
 
-static struct roperation *new_remote_operation(char *path,
-	char *snapshot_id, int cli_fd, int flags, bool close_fd)
+static struct roperation *new_remote_operation(char *path, int cli_fd,
+	int flags, bool close_fd)
 {
 	struct roperation *rop = xzalloc(sizeof(struct roperation));
 
@@ -305,9 +263,7 @@ static struct roperation *new_remote_operation(char *path,
 		return NULL;
 
 	strncpy(rop->path, path, PATH_MAX -1 );
-	strncpy(rop->snapshot_id, snapshot_id, PATH_MAX - 1);
 	rop->path[PATH_MAX - 1] = '\0';
-	rop->snapshot_id[PATH_MAX - 1] = '\0';
 	rop->fd = cli_fd;
 	rop->flags = flags;
 	rop->close_fd = close_fd;
@@ -355,14 +311,14 @@ static inline struct rimage *clear_remote_image(struct rimage *rimg)
 	return rimg;
 }
 
-static struct roperation *handle_accept_write(int cli_fd, char *snapshot_id,
-	char *path, int flags, bool close_fd, uint64_t size)
+static struct roperation *handle_accept_write(int cli_fd, char *path,
+	int flags, bool close_fd, uint64_t size)
 {
 	struct roperation *rop = NULL;
-	struct rimage *rimg = get_rimg_by_name(snapshot_id, path);
+	struct rimage *rimg = get_rimg_by_name(path);
 
 	if (rimg == NULL) {
-		rimg = new_remote_image(path, snapshot_id);
+		rimg = new_remote_image(path);
 		if (rimg == NULL) {
 			pr_perror("Error preparing remote image");
 			goto err;
@@ -373,7 +329,7 @@ static struct roperation *handle_accept_write(int cli_fd, char *snapshot_id,
 			clear_remote_image(rimg);
 	}
 
-	rop = new_remote_operation(path, snapshot_id, cli_fd, flags, close_fd);
+	rop = new_remote_operation(path, cli_fd, flags, close_fd);
 	if (rop == NULL) {
 		pr_perror("Error preparing remote operation");
 		goto err;
@@ -389,22 +345,22 @@ err:
 }
 
 static inline struct roperation *handle_accept_proxy_write(int cli_fd,
-	char *snapshot_id, char *path, int flags)
+	char *path, int flags)
 {
-	return handle_accept_write(cli_fd, snapshot_id, path, flags, true, 0);
+	return handle_accept_write(cli_fd, path, flags, true, 0);
 }
 
 static struct roperation *handle_accept_proxy_read(int cli_fd,
-	char *snapshot_id, char *path, int flags)
+	char *path, int flags)
 {
 	struct roperation *rop = NULL;
 	struct rimage *rimg    = NULL;
 
-	rimg = get_rimg_by_name(snapshot_id, path);
+	rimg = get_rimg_by_name(path);
 
 	// Check if we already have the image.
 	if (rimg == NULL) {
-		pr_info("No image %s:%s.\n", path, snapshot_id);
+		pr_info("No image %s\n", path);
 		if (write_reply_header(cli_fd, ENOENT) < 0) {
 			pr_perror("Error writing reply header for unexisting image");
 			goto err;
@@ -414,12 +370,11 @@ static struct roperation *handle_accept_proxy_read(int cli_fd,
 	}
 
 	if (write_reply_header(cli_fd, 0) < 0) {
-		pr_perror("Error writing reply header for %s:%s",
-			path, snapshot_id);
+		pr_perror("Error writing reply header for %s", path);
 		goto err;
 	}
 
-	rop = new_remote_operation(path, snapshot_id, cli_fd, flags, true);
+	rop = new_remote_operation(path, cli_fd, flags, true);
 	if (rop == NULL) {
 		pr_perror("Error preparing remote operation");
 		goto err;
@@ -443,12 +398,12 @@ static inline void finish_local()
 }
 
 static struct roperation *handle_accept_cache_read(int cli_fd,
-	char *snapshot_id, char *path, int flags)
+	char *path, int flags)
 {
 	struct rimage     *rimg = NULL;
 	struct roperation *rop   = NULL;
 
-	rop = new_remote_operation(path, snapshot_id, cli_fd, flags, true);
+	rop = new_remote_operation(path, cli_fd, flags, true);
 	if (rop == NULL) {
 		pr_perror("Error preparing remote operation");
 		close(cli_fd);
@@ -456,11 +411,10 @@ static struct roperation *handle_accept_cache_read(int cli_fd,
 	}
 
 	// Check if we already have the image.
-	rimg = get_rimg_by_name(snapshot_id, path);
+	rimg = get_rimg_by_name(path);
 	if (rimg != NULL && rimg->size > 0) {
 		if (write_reply_header(cli_fd, 0) < 0) {
-			pr_perror("Error writing reply header for %s:%s",
-				path, snapshot_id);
+			pr_perror("Error writing reply header for %s", path);
 			close(rop->fd);
 			xfree(rop);
 		}
@@ -468,7 +422,7 @@ static struct roperation *handle_accept_cache_read(int cli_fd,
 		return rop;
 	} else if (finished_remote) {
 		// The file does not exist.
-		pr_info("No image %s:%s.\n", path, snapshot_id);
+		pr_info("No image %s\n", path);
 		if (write_reply_header(cli_fd, ENOENT) < 0)
 			pr_perror("Error writing reply header for unexisting image");
 		close(cli_fd);
@@ -484,18 +438,15 @@ static void forward_remote_image(struct roperation *rop)
 	// Set blocking during the setup.
 	fd_set_nonblocking(rop->fd, false);
 
-	ret = write_remote_header(
-		rop->fd, rop->snapshot_id, rop->path, rop->flags, rop->size);
+	ret = write_remote_header(rop->fd, rop->path, rop->flags, rop->size);
 
 	if (ret < 0) {
-		pr_perror("Error writing header for %s:%s",
-			rop->path, rop->snapshot_id);
+		pr_perror("Error writing header for %s", rop->path);
 		return;
 	}
 
-	pr_info("[fd=%d] Forwarding %s request for %s:%s (%" PRIu64 " bytes\n",
-		rop->fd, strflags(rop->flags), rop->path, rop->snapshot_id,
-		rop->size);
+	pr_info("[fd=%d] Forwarding %s request for %s (%" PRIu64 " bytes\n",
+		rop->fd, strflags(rop->flags), rop->path, rop->size);
 
 	// Go back to non-blocking
 	fd_set_nonblocking(rop->fd, true);
@@ -507,7 +458,6 @@ static void forward_remote_image(struct roperation *rop)
 static void handle_remote_accept(int fd)
 {
 	char path[PATH_MAX];
-	char snapshot_id[PATH_MAX];
 	int flags = 0;
 	uint64_t size = 0;
 	int64_t ret;
@@ -516,7 +466,7 @@ static void handle_remote_accept(int fd)
 	// Set blocking during the setup.
 	fd_set_nonblocking(fd, false);
 
-	ret = read_remote_header(fd, snapshot_id, path, &flags, &size);
+	ret = read_remote_header(fd, path, &flags, &size);
 	if (ret < 0) {
 		pr_perror("Unable to receive remote header from image proxy");
 		goto err;
@@ -531,12 +481,12 @@ static void handle_remote_accept(int fd)
 	// Go back to non-blocking
 	fd_set_nonblocking(fd, true);
 
-	pr_info("[fd=%d] Received %s request for %s:%s with %" PRIu64 " bytes\n",
-		fd, strflags(flags), path, snapshot_id, size);
+	pr_info("[fd=%d] Received %s request for %s with %" PRIu64 " bytes\n",
+		fd, strflags(flags), path, size);
 
 
 	forwarding = true;
-	rop = handle_accept_write(fd, snapshot_id, path, flags, false, size);
+	rop = handle_accept_write(fd, path, flags, false, size);
 
 	if (rop != NULL) {
 		list_add_tail(&(rop->l), &rop_inprogress);
@@ -551,7 +501,6 @@ static void handle_local_accept(int fd)
 {
 	int cli_fd;
 	char path[PATH_MAX];
-	char snapshot_id[PATH_MAX];
 	int flags = 0;
 	struct sockaddr_in cli_addr;
 	socklen_t clilen = sizeof(cli_addr);
@@ -563,29 +512,28 @@ static void handle_local_accept(int fd)
 		return;
 	}
 
-	if (read_header(cli_fd, snapshot_id, path, &flags) < 0) {
+	if (read_header(cli_fd, path, &flags) < 0) {
 		pr_err("Error reading local image header\n");
 		goto err;
 	}
 
-	if (snapshot_id[0] == NULL_SNAPSHOT_ID && path[0] == FINISH) {
+	if (path[0] == FINISH) {
 		close(cli_fd);
 		finish_local();
 		return;
 	}
 
-	pr_info("[fd=%d] Received %s request for %s:%s\n",
-		cli_fd, strflags(flags), path, snapshot_id);
+	pr_info("[fd=%d] Received %s request for %s\n", cli_fd, strflags(flags), path);
 
 	// Write/Append case (only possible in img-proxy).
 	if (flags != O_RDONLY) {
-		rop = handle_accept_proxy_write(cli_fd, snapshot_id, path, flags);
+		rop = handle_accept_proxy_write(cli_fd, path, flags);
 	} else if (restoring) {
 		// Read case while restoring (img-cache).
-		rop = handle_accept_cache_read(cli_fd, snapshot_id, path, flags);
+		rop = handle_accept_cache_read(cli_fd, path, flags);
 	} else {
 		// Read case while dumping (img-proxy).
-		rop = handle_accept_proxy_read(cli_fd, snapshot_id, path, flags);
+		rop = handle_accept_proxy_read(cli_fd, path, flags);
 	}
 
 	// If we have an operation. Check if we are ready to start or not.
@@ -630,7 +578,7 @@ static inline void finish_proxy_write(struct roperation *rop)
 {
 	// Normal image received, forward it.
 	struct roperation *rop_to_forward = new_remote_operation(
-		rop->path, rop->snapshot_id, remote_sk, rop->flags, false);
+		rop->path, remote_sk, rop->flags, false);
 
 	// Add image to list of images.
 	list_add_tail(&(rop->rimg->l), &rimg_head);
@@ -644,8 +592,7 @@ static inline void finish_proxy_write(struct roperation *rop)
 
 static void finish_cache_write(struct roperation *rop)
 {
-	struct roperation *prop = get_rop_by_name(
-	&rop_pending, rop->snapshot_id, rop->path);
+	struct roperation *prop = get_rop_by_name(&rop_pending, rop->path);
 
 	forwarding = false;
 	event_set(epoll_fd, EPOLL_CTL_ADD, remote_sk, EPOLLIN, &remote_sk);
@@ -654,14 +601,13 @@ static void finish_cache_write(struct roperation *rop)
 	list_add_tail(&(rop->rimg->l), &rimg_head);
 
 	if (prop != NULL) {
-		pr_info("\t[fd=%d] Resuming pending %s for %s:%s\n",
-			prop->fd, strflags(prop->flags),
-			prop->snapshot_id, prop->path);
+		pr_info("\t[fd=%d] Resuming pending %s for %s\n",
+			prop->fd, strflags(prop->flags), prop->path);
 
 		// Write header for pending image.
 		if (write_reply_header(prop->fd, 0) < 0) {
-			pr_perror("Error writing reply header for %s:%s",
-				prop->path, prop->snapshot_id);
+			pr_perror("Error writing reply header for %s",
+				prop->path);
 			close(prop->fd);
 			xfree(prop);
 			return;
@@ -696,15 +642,15 @@ static void handle_roperation(struct epoll_event *event,
 
 	// Operation is finished.
 	if (ret < 0) {
-		pr_perror("Unable to %s %s:%s (returned %" PRId64 ")",
+		pr_perror("Unable to %s %s (returned %" PRId64 ")",
 				event->events & EPOLLOUT ? "send" : "receive",
-				rop->rimg->path, rop->rimg->snapshot_id, ret);
+				rop->rimg->path, ret);
 		goto err;
 	} else {
-		pr_info("[fd=%d] Finished %s %s:%s to CRIU (size %" PRIu64 ")\n",
+		pr_info("[fd=%d] Finished %s %s to CRIU (size %" PRIu64 ")\n",
 				rop->fd,
 				event->events & EPOLLOUT ? "sending" : "receiving",
-				rop->rimg->path, rop->rimg->snapshot_id, rop->rimg->size);
+				rop->rimg->path, rop->rimg->size);
 	}
 
 	// If receive operation is finished
@@ -732,7 +678,7 @@ static void check_pending()
 	struct rimage *rimg = NULL;
 
 	list_for_each_entry(rop, &rop_pending, l) {
-		rimg = get_rimg_by_name(rop->snapshot_id, rop->path);
+		rimg = get_rimg_by_name(rop->path);
 		if (rimg != NULL) {
 			rop_set_rimg(rop, rimg);
 			if (restoring) {
@@ -880,8 +826,8 @@ static int64_t recv_image_async(struct roperation *op)
 	} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 		return errno;
 	} else {
-		pr_perror("Read for %s:%s socket on fd=%d failed",
-			rimg->path, rimg->snapshot_id, fd);
+		pr_perror("Read for %s socket on fd=%d failed",
+			rimg->path, fd);
 		if (close_fd)
 			close(fd);
 		return -1;
@@ -915,63 +861,59 @@ static int64_t send_image_async(struct roperation *op)
 		}
 		return n;
 	} else if (errno == EPIPE || errno == ECONNRESET) {
-		pr_warn("Connection for %s:%s was closed early than expected\n",
-			rimg->path, rimg->snapshot_id);
+		pr_warn("Connection for %s was closed early than expected\n",
+			rimg->path);
 		return 0;
 	} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 		return errno;
 	} else {
-		pr_perror("Write on %s:%s socket failed",
-			rimg->path, rimg->snapshot_id);
+		pr_perror("Write on %s socket failed", rimg->path);
 		return -1;
 	}
 }
 
-int read_remote_image_connection(char *snapshot_id, char *path)
+int read_remote_image_connection(char *path)
 {
 	int error = 0;
 	int sockfd = setup_UNIX_client_socket(restoring ? DEFAULT_CACHE_SOCKET: DEFAULT_PROXY_SOCKET);
 
 	if (sockfd < 0) {
-		pr_err("Error opening local connection for %s:%s\n",
-				path, snapshot_id);
+		pr_err("Error opening local connection for %s\n", path);
 		return -1;
 	}
 
-	if (write_header(sockfd, snapshot_id, path, O_RDONLY) < 0) {
-		pr_err("Error writing header for %s:%s\n", path, snapshot_id);
+	if (write_header(sockfd, path, O_RDONLY) < 0) {
+		pr_err("Error writing header for %s\n", path);
 		return -1;
 	}
 
 	if (read_reply_header(sockfd, &error) < 0) {
-		pr_err("Error reading reply header for %s:%s\n",
-				path, snapshot_id);
+		pr_err("Error reading reply header for %s\n", path);
 		return -1;
 	}
 
-	if (!error || (snapshot_id[0] == NULL_SNAPSHOT_ID && path[0] != FINISH))
+	if (!error || path[0] == FINISH)
 		return sockfd;
 
 	if (error == ENOENT) {
-		pr_info("Image does not exist (%s:%s)\n", path, snapshot_id);
+		pr_info("Image does not exist (%s)\n", path);
 		close(sockfd);
 		return -ENOENT;
 	}
-	pr_err("Unexpected error returned: %d (%s:%s)\n",
-			error, path, snapshot_id);
+	pr_err("Unexpected error returned: %d (%s)\n", error, path);
 	close(sockfd);
 	return -1;
 }
 
-int write_remote_image_connection(char *snapshot_id, char *path, int flags)
+int write_remote_image_connection(char *path, int flags)
 {
 	int sockfd = setup_UNIX_client_socket(DEFAULT_PROXY_SOCKET);
 
 	if (sockfd < 0)
 		return -1;
 
-	if (write_header(sockfd, snapshot_id, path, flags) < 0) {
-		pr_err("Error writing header for %s:%s\n", path, snapshot_id);
+	if (write_header(sockfd, path, flags) < 0) {
+		pr_err("Error writing header for %s\n", path);
 		return -1;
 	}
 	return sockfd;
@@ -980,7 +922,7 @@ int write_remote_image_connection(char *snapshot_id, char *path, int flags)
 int finish_remote_dump(void)
 {
 	pr_info("Dump side is calling finish\n");
-	int fd = write_remote_image_connection(NULL_SNAPSHOT_ID, FINISH, O_WRONLY);
+	int fd = write_remote_image_connection(FINISH, O_WRONLY);
 
 	if (fd == -1) {
 		pr_err("Unable to open finish dump connection");
@@ -994,7 +936,7 @@ int finish_remote_dump(void)
 int finish_remote_restore(void)
 {
 	pr_info("Restore side is calling finish\n");
-	int fd = read_remote_image_connection(NULL_SNAPSHOT_ID, FINISH);
+	int fd = read_remote_image_connection(FINISH);
 
 	if (fd == -1) {
 		pr_err("Unable to open finish restore connection\n");
@@ -1032,128 +974,4 @@ int skip_remote_bytes(int fd, unsigned long len)
 		return -1;
 	}
 	return 0;
-}
-
-static int pull_snapshot_ids(void)
-{
-	int n, sockfd;
-	SnapshotIdEntry *ls;
-	struct snapshot *s = NULL;
-
-	sockfd = read_remote_image_connection(NULL_SNAPSHOT_ID, PARENT_IMG);
-
-	/* The connection was successful but there is not file. */
-	if (sockfd < 0) {
-		if (errno != ENOENT) {
-			pr_err("Unable to open snapshot id read connection\n");
-			return -1;
-		}
-		return 0;
-	}
-
-	while (1) {
-		n = pb_read_obj(sockfd, (void **)&ls, PB_SNAPSHOT_ID);
-		if (!n) {
-			close(sockfd);
-			return n;
-		} else if (n < 0) {
-			pr_err("Unable to read remote snapshot ids\n");
-			close(sockfd);
-			return n;
-		}
-
-		s = new_snapshot(ls->snapshot_id);
-		if (!s) {
-			close(sockfd);
-			return -1;
-		}
-		add_snapshot(s);
-		pr_info("[read_snapshot ids] parent = %s\n", ls->snapshot_id);
-	}
-	free(ls);
-	close(sockfd);
-	return n;
-}
-
-int push_snapshot_id(void)
-{
-	int n;
-	restoring = false;
-	SnapshotIdEntry rn = SNAPSHOT_ID_ENTRY__INIT;
-	int sockfd = write_remote_image_connection(NULL_SNAPSHOT_ID, PARENT_IMG, O_APPEND);
-
-	if (sockfd < 0) {
-		pr_err("Unable to open snapshot id push connection\n");
-		return -1;
-	}
-
-	rn.snapshot_id = xmalloc(sizeof(char) * PATH_MAX);
-	if (!rn.snapshot_id) {
-		close(sockfd);
-		return -1;
-	}
-	strncpy(rn.snapshot_id, snapshot_id, PATH_MAX);
-
-	n = pb_write_obj(sockfd, &rn, PB_SNAPSHOT_ID);
-
-	xfree(rn.snapshot_id);
-	close(sockfd);
-	return n;
-}
-
-void init_snapshot_id(char *si)
-{
-	snapshot_id = si;
-}
-
-char *get_curr_snapshot_id(void)
-{
-	return snapshot_id;
-}
-
-int get_curr_snapshot_id_idx(void)
-{
-	struct snapshot *si;
-	int idx = 0;
-
-	if (list_empty(&snapshot_head))
-		pull_snapshot_ids();
-
-	list_for_each_entry(si, &snapshot_head, l) {
-		if (!strncmp(si->snapshot_id, snapshot_id, PATH_MAX))
-			return idx;
-		idx++;
-	}
-
-	pr_err("Error, could not find current snapshot id (%s) fd\n",
-		snapshot_id);
-	return -1;
-}
-
-char *get_snapshot_id_from_idx(int idx)
-{
-	struct snapshot *si;
-
-	if (list_empty(&snapshot_head))
-		pull_snapshot_ids();
-
-	/* Note: if idx is the service fd then we need the current
-	 * snapshot_id idx. Else we need a parent snapshot_id idx.
-	 */
-	if (idx == get_service_fd(IMG_FD_OFF))
-		idx = get_curr_snapshot_id_idx();
-
-	list_for_each_entry(si, &snapshot_head, l) {
-		if (!idx)
-			return si->snapshot_id;
-		idx--;
-	}
-
-	pr_err("Error, could not find snapshot id for idx %d\n", idx);
-	return NULL;
-}
-
-int get_curr_parent_snapshot_id_idx(void)
-{
-	return get_curr_snapshot_id_idx() - 1;
 }

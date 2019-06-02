@@ -1563,11 +1563,6 @@ int cr_pre_dump_tasks(pid_t pid)
 	 */
 	rlimit_unlimit_nofile();
 
-	if (opts.remote && push_snapshot_id() < 0) {
-		pr_err("Failed to push image namespace.\n");
-		goto err;
-	}
-
 	root_item = alloc_pstree_item();
 	if (!root_item)
 		goto err;
@@ -1776,11 +1771,6 @@ int cr_dump_tasks(pid_t pid)
 	 *  maximum.
 	 */
 	rlimit_unlimit_nofile();
-
-	if (opts.remote && push_snapshot_id() < 0) {
-		pr_err("Failed to push image namespace.\n");
-		goto err;
-	}
 
 	root_item = alloc_pstree_item();
 	if (!root_item)
