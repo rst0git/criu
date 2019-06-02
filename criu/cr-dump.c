@@ -80,7 +80,6 @@
 #include "fault-injection.h"
 #include "dump.h"
 #include "eventpoll.h"
-#include "img-remote.h"
 
 /*
  * Architectures can overwrite this function to restore register sets that
@@ -1580,11 +1579,6 @@ int cr_pre_dump_tasks(pid_t pid)
 	 */
 	rlimit_unlimit_nofile();
 
-	if (opts.remote && push_snapshot_id() < 0) {
-		pr_err("Failed to push image namespace.\n");
-		goto err;
-	}
-
 	root_item = alloc_pstree_item();
 	if (!root_item)
 		goto err;
@@ -1688,6 +1682,9 @@ static int cr_dump_finish(int ret)
 {
 	int post_dump_ret = 0;
 
+	if (remote_dump_finish())
+		ret = -1;
+
 	if (disconnect_from_page_server())
 		ret = -1;
 
@@ -1762,11 +1759,6 @@ static int cr_dump_finish(int ret)
 
 	close_service_fd(CR_PROC_FD_OFF);
 
-	if (opts.remote && (finish_remote_dump() < 0)) {
-		pr_err("Finish remote dump failed.\n");
-		return post_dump_ret ? : 1;
-	}
-
 	if (ret) {
 		pr_err("Dumping FAILED.\n");
 	} else {
@@ -1794,11 +1786,6 @@ int cr_dump_tasks(pid_t pid)
 	 *  maximum.
 	 */
 	rlimit_unlimit_nofile();
-
-	if (opts.remote && push_snapshot_id() < 0) {
-		pr_err("Failed to push image namespace.\n");
-		goto err;
-	}
 
 	root_item = alloc_pstree_item();
 	if (!root_item)

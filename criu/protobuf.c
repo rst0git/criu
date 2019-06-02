@@ -56,6 +56,9 @@ int do_pb_read_one(struct cr_img *img, void **pobj, int type, bool eof)
 
 	*pobj = NULL;
 
+	if (remote_image(img))
+		return remote_get_entry(pobj, img->type, img->path, eof);
+
 	if (unlikely(empty_image(img)))
 		ret = 0;
 	else
@@ -138,13 +141,18 @@ int pb_write_one(struct cr_img *img, void *obj, int type)
 	if (size > (u32)sizeof(local)) {
 		buf = xmalloc(size);
 		if (!buf)
-			goto err;
+			goto out;
 	}
 
 	packed = cr_pb_descs[type].pack(obj, buf);
 	if (packed != size) {
 		pr_err("Failed packing PB object %p\n", obj);
-		goto err;
+		goto out;
+	}
+
+	if (remote_image(img)) {
+		ret = remote_send_image(img->path, img->type, type, buf, size);
+		goto out;
 	}
 
 	iov[0].iov_base = &size;
@@ -155,11 +163,11 @@ int pb_write_one(struct cr_img *img, void *obj, int type)
 	ret = bwritev(&img->_x, iov, 2);
 	if (ret != size + sizeof(size)) {
 		pr_perror("Can't write %d bytes", (int)(size + sizeof(size)));
-		goto err;
+		goto out;
 	}
 
 	ret = 0;
-err:
+out:
 	if (buf != (void *)&local)
 		xfree(buf);
 	return ret;
