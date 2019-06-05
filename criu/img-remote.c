@@ -524,27 +524,23 @@ static void finish_cache_write(struct roperation *rop)
 	}
 }
 
-static int handle_roperation(struct epoll_event *event,
-	struct roperation *rop)
+static int handle_roperation(struct epoll_event *event, struct roperation *rop)
 {
-	int64_t ret = (EPOLLOUT & event->events) ?
-		send_image_async(rop) :
-		recv_image_async(rop);
+	int64_t ret;
+
+	if (EPOLLOUT & event->events)
+		ret = send_image_async(rop);
+	else
+		ret = recv_image_async(rop);
 
 	if (ret > 0 || ret == EAGAIN || ret == EWOULDBLOCK) {
-		event_set(
-			epoll_fd,
-			EPOLL_CTL_ADD,
-			rop->fd,
-			event->events,
-			rop);
+		event_set(epoll_fd, EPOLL_CTL_ADD, rop->fd, event->events, rop);
 		return ret;
 	}
 
-	// Remove rop from list (either in progress or forwarding).
+	/* Remove rop from list (either in progress or forwarding) */
 	list_del(&(rop->l));
 
-	// Operation is finished.
 	if (ret < 0) {
 		pr_perror("Unable to %s %s (returned %" PRId64 ")",
 				event->events & EPOLLOUT ? "send" : "receive",
@@ -552,24 +548,22 @@ static int handle_roperation(struct epoll_event *event,
 		goto err;
 	}
 
+	/* Operation is finished */
 	pr_info("%s %s (%" PRIu64 " bytes)\n",
 			event->events & EPOLLOUT ? "Sent" : "Received",
 			rop->rimg->path, rop->rimg->size);
 
-	// If receive operation is finished
 	if (event->events & EPOLLIN) {
-		// Cached side (finished receiving forwarded image)
-		if (restoring) {
+		/* Cached side (finished receiving forwarded image) */
+		if (restoring)
 			finish_cache_write(rop);
-		} else {
-			// Proxy side (finished receiving local image)
+		else /* Proxy side (finished receiving local image) */
 			finish_proxy_write(rop);
-		}
 	} else {
-		// Proxy side (Finished forwarding image or reading it locally).
+		/* Proxy side (Finished forwarding image or reading it locally) */
 		if (!restoring)
 			finish_proxy_read(rop);
-		// Nothing to be done when a read is finished on the cache side.
+		/* Nothing to be done when a read is finished on the cache side */
 	}
 err:
 	xfree(rop);
