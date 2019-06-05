@@ -372,7 +372,7 @@ static int img_write_magic(struct cr_img *img, int oflags, int type)
 	return write_img(img, &imgset_template[type].magic);
 }
 
-static inline int do_open_remote_image(char *path, int flags)
+static inline int do_open_remote_image(char *path, int type, int flags)
 {
 	int ret;
 
@@ -380,9 +380,9 @@ static inline int do_open_remote_image(char *path, int flags)
 		(flags == O_RSTR) ? "RDONLY" : "WRONLY", path);
 
 	if (flags == O_RSTR)
-		ret = read_remote_image_connection(path);
+		ret = read_remote_image_connection(path, type);
 	else
-		ret = write_remote_image_connection(path, O_WRONLY);
+		ret = write_remote_image_connection(path, type, O_WRONLY);
 
 	return ret;
 }
@@ -413,7 +413,7 @@ static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long of
 	flags = oflags & ~(O_NOBUF | O_SERVICE | O_FORCE_LOCAL);
 
 	if (opts.remote && !(oflags & O_FORCE_LOCAL))
-		ret = do_open_remote_image(path, flags);
+		ret = do_open_remote_image(path, type, flags);
 	else {
 		/*
 		 * For pages images dedup we need to open images read-write on
