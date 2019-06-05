@@ -25,6 +25,8 @@ struct rbuf {
 struct rimage {
 	/* File name (identifier) */
 	char path[PATH_MAX];
+	/* Image type (identifer) */
+	int type;
 	/* List anchor. */
 	struct list_head l;
 	/* List of buffers that compose the image. */
@@ -45,6 +47,8 @@ struct roperation {
 	int fd;
 	/* File name (identifier) */
 	char path[PATH_MAX];
+	/* Image type (identifer) */
+	int type;
 	/* Remote image being used (may be null if the operation is pending). */
 	struct rimage *rimg;
 	/* Flags for the operation. */
@@ -69,19 +73,19 @@ extern int local_sk;
 extern bool restoring;
 
 void accept_image_connections();
-struct rimage *get_rimg_by_name(const char *path);
+struct rimage *get_rimg_by_name(const char *path, int type);
 
 int setup_UNIX_server_socket(char *path);
 
 /* Called by restore to get the fd correspondent to a particular path.  This call
  * will block until the connection is received.
  */
-int read_remote_image_connection(char *path);
+int read_remote_image_connection(char *path, int type);
 
 /* Called by dump to create a socket connection to the restore side. The socket
  * fd is returned for further writing operations.
  */
-int write_remote_image_connection(char *path, int flags);
+int write_remote_image_connection(char *path, int type, int flags);
 
 /* Called by dump/restore when everything is dumped/restored. This function
  * creates a new connection with a special control name. The receiver side uses
