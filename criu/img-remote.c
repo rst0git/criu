@@ -455,7 +455,7 @@ static void forward_remote_image(struct roperation *rop)
 	event_set(epoll_fd, EPOLL_CTL_ADD, rop->fd, EPOLLOUT, rop);
 }
 
-static void handle_remote_accept(int fd)
+static int handle_remote_accept(int fd)
 {
 	char path[PATH_MAX];
 	int flags = 0;
@@ -469,13 +469,14 @@ static void handle_remote_accept(int fd)
 	ret = read_remote_header(fd, path, &flags, &size);
 	if (ret < 0) {
 		pr_perror("Unable to receive remote header from image proxy");
-		goto err;
+		close(fd);
+		return -1;
 	}
 	/* This means that the no more images are coming. */
 	else if (!ret) {
 		finished_remote = true;
 		pr_info("Image Proxy connection closed.\n");
-		return;
+		return 0;
 	}
 
 	// Go back to non-blocking
@@ -492,9 +493,7 @@ static void handle_remote_accept(int fd)
 		list_add_tail(&(rop->l), &rop_inprogress);
 		event_set(epoll_fd, EPOLL_CTL_ADD, rop->fd, EPOLLIN, rop);
 	}
-	return;
-err:
-	close(fd);
+	return 0;
 }
 
 static void handle_local_accept(int fd)
@@ -620,7 +619,7 @@ static void finish_cache_write(struct roperation *rop)
 	}
 }
 
-static void handle_roperation(struct epoll_event *event,
+static int handle_roperation(struct epoll_event *event,
 	struct roperation *rop)
 {
 	int64_t ret = (EPOLLOUT & event->events) ?
@@ -634,7 +633,7 @@ static void handle_roperation(struct epoll_event *event,
 			rop->fd,
 			event->events,
 			rop);
-		return;
+		return ret;
 	}
 
 	// Remove rop from list (either in progress or forwarding).
@@ -670,6 +669,7 @@ static void handle_roperation(struct epoll_event *event,
 	}
 err:
 	xfree(rop);
+	return ret;
 }
 
 static void check_pending()
@@ -746,12 +746,19 @@ void accept_image_connections() {
 				handle_local_accept(local_sk);
 			} else if (restoring && !forwarding && events[i].data.ptr == &remote_sk) {
 				event_set(epoll_fd, EPOLL_CTL_DEL, remote_sk, 0, 0);
-				handle_remote_accept(remote_sk);
+				if (handle_remote_accept(remote_sk) < 0) {
+					pr_err("remote accept failed\n");
+					goto end;
+				}
 			} else {
 				struct roperation *rop =
 					(struct roperation*)events[i].data.ptr;
 				event_set(epoll_fd, EPOLL_CTL_DEL, rop->fd, 0, 0);
-				handle_roperation(&events[i], rop);
+				if (handle_roperation(&events[i], rop) < 0) {
+					pr_err("remote operation failed\n");
+					goto end;
+				}
+
 			}
 		}
 
@@ -863,7 +870,7 @@ static int64_t send_image_async(struct roperation *op)
 	} else if (errno == EPIPE || errno == ECONNRESET) {
 		pr_warn("Connection for %s was closed early than expected\n",
 			rimg->path);
-		return 0;
+		return -1;
 	} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 		return errno;
 	} else {
