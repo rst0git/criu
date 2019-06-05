@@ -863,7 +863,7 @@ static int64_t send_image_async(struct roperation *op)
 	} else if (errno == EPIPE || errno == ECONNRESET) {
 		pr_warn("Connection for %s was closed early than expected\n",
 			rimg->path);
-		return 0;
+		return -1;
 	} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 		return errno;
 	} else {
