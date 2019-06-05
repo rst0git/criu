@@ -218,8 +218,7 @@ err:
 	return NULL;
 }
 
-static struct roperation *new_remote_operation(char *path, int type,
-	int cli_fd, bool close_fd)
+static struct roperation *new_remote_operation(char *path, int type, int cli_fd)
 {
 	struct roperation *rop = xzalloc(sizeof(struct roperation));
 
@@ -230,7 +229,6 @@ static struct roperation *new_remote_operation(char *path, int type,
 	rop->path[PATH_MAX - 1] = '\0';
 	rop->type = type;
 	rop->fd = cli_fd;
-	rop->close_fd = close_fd;
 
 	return rop;
 }
@@ -263,7 +261,7 @@ static inline struct rimage *clear_remote_image(struct rimage *rimg)
 }
 
 static struct roperation *handle_accept_write(int cli_fd, char *path,
-	int type, bool close_fd, uint64_t size)
+	int type, uint64_t size)
 {
 	struct roperation *rop = NULL;
 	struct rimage *rimg = get_rimg_by_name(path, type);
@@ -278,7 +276,7 @@ static struct roperation *handle_accept_write(int cli_fd, char *path,
 		list_del(&(rimg->l));
 	}
 
-	rop = new_remote_operation(path, type, cli_fd, close_fd);
+	rop = new_remote_operation(path, type, cli_fd);
 	if (rop == NULL) {
 		pr_perror("Error preparing remote operation");
 		goto err;
@@ -296,7 +294,7 @@ err:
 static inline struct roperation *handle_accept_proxy_write(int cli_fd,
 	char *path, int type)
 {
-	return handle_accept_write(cli_fd, path, type, true, 0);
+	return handle_accept_write(cli_fd, path, type, 0);
 }
 
 static inline void finish_local()
@@ -315,7 +313,7 @@ static struct roperation *handle_accept_cache_read(int cli_fd,
 	struct rimage     *rimg = NULL;
 	struct roperation *rop   = NULL;
 
-	rop = new_remote_operation(path, type, cli_fd, true);
+	rop = new_remote_operation(path, type, cli_fd);
 	if (rop == NULL) {
 		pr_perror("Error preparing remote operation");
 		close(cli_fd);
@@ -389,7 +387,7 @@ static int handle_remote_accept(int fd)
 		fd_set_nonblocking(fd, true);
 
 		forwarding = true;
-		rop = handle_accept_write(fd, ri->name, ri->type, false, ri->size);
+		rop = handle_accept_write(fd, ri->name, ri->type, ri->size);
 
 		if (rop != NULL) {
 			list_add_tail(&(rop->l), &rop_inprogress);
@@ -482,7 +480,7 @@ static inline void finish_proxy_write(struct roperation *rop)
 {
 	/* Normal image received, forward it */
 	struct roperation *rop_to_forward = new_remote_operation(
-		rop->path, rop->type, remote_sk, false);
+		rop->path, rop->type, remote_sk);
 
 	// Add image to list of images.
 	append_rimg(rop);
@@ -701,7 +699,6 @@ static int64_t recv_image_async(struct roperation *op)
 	int fd = op->fd;
 	struct rimage *rimg = op->rimg;
 	uint64_t size = op->size;
-	bool close_fd = op->close_fd;
 	struct rbuf *curr_buf = op->curr_recv_buf;
 	int n;
 
@@ -711,7 +708,7 @@ static int64_t recv_image_async(struct roperation *op)
 				min((int) (size - rimg->size), BUF_SIZE - curr_buf->nbytes) :
 				BUF_SIZE - curr_buf->nbytes);
 	if (n == 0) {
-		if (close_fd)
+		if (fd != remote_sk)
 			close(fd);
 		return n;
 	} else if (n > 0) {
@@ -720,7 +717,7 @@ static int64_t recv_image_async(struct roperation *op)
 		if (curr_buf->nbytes == BUF_SIZE) {
 			struct rbuf *buf = xmalloc(sizeof(struct rbuf));
 			if (buf == NULL) {
-				if (close_fd)
+				if (fd != remote_sk)
 					close(fd);
 				return -1;
 			}
@@ -730,7 +727,7 @@ static int64_t recv_image_async(struct roperation *op)
 			return n;
 		}
 		if (size && rimg->size == size) {
-			if (close_fd)
+			if (fd != remote_sk)
 				close(fd);
 			return 0;
 		}
@@ -739,7 +736,7 @@ static int64_t recv_image_async(struct roperation *op)
 	} else {
 		pr_perror("Read for %s socket on fd=%d failed",
 			rimg->path, fd);
-		if (close_fd)
+		if (fd != remote_sk)
 			close(fd);
 		return -1;
 	}
@@ -750,7 +747,6 @@ static int64_t send_image_async(struct roperation *op)
 {
 	int fd = op->fd;
 	struct rimage *rimg = op->rimg;
-	bool close_fd = op->close_fd;
 	int n;
 
 	n = write(
@@ -766,7 +762,7 @@ static int64_t send_image_async(struct roperation *op)
 			op->curr_sent_bytes = 0;
 			return n;
 		} else if (op->curr_sent_bytes == op->curr_sent_buf->nbytes) {
-			if (close_fd)
+			if (fd != remote_sk)
 				close(fd);
 			return 0;
 		}

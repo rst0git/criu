@@ -51,8 +51,6 @@ struct roperation {
 	int type;
 	/* Remote image being used (may be null if the operation is pending). */
 	struct rimage *rimg;
-	/* If fd should be closed when the operation is done. */
-	bool close_fd;
 	/* Note: recv operation only. How much bytes should be received. */
 	uint64_t size;
 	/* Note: recv operation only. Buffer being written. */
