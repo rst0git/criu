@@ -244,22 +244,6 @@ static inline void rop_set_rimg(struct roperation *rop, struct rimage *rimg)
 	rop->curr_sent_bytes = 0;
 }
 
-/* Clears a remote image struct for reusing it. */
-static inline struct rimage *clear_remote_image(struct rimage *rimg)
-{
-	while (!list_is_singular(&(rimg->buf_head))) {
-		struct rbuf *buf = list_entry(rimg->buf_head.prev, struct rbuf, l);
-
-		list_del(rimg->buf_head.prev);
-		xfree(buf);
-	}
-
-	list_entry(rimg->buf_head.next, struct rbuf, l)->nbytes = 0;
-	rimg->size = 0;
-
-	return rimg;
-}
-
 static struct roperation *handle_accept_write(int cli_fd, char *path,
 	int type, uint64_t size)
 {
