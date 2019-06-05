@@ -51,8 +51,6 @@ struct roperation {
 	int type;
 	/* Remote image being used (may be null if the operation is pending). */
 	struct rimage *rimg;
-	/* Flags for the operation. */
-	int flags;
 	/* If fd should be closed when the operation is done. */
 	bool close_fd;
 	/* Note: recv operation only. How much bytes should be received. */
@@ -85,7 +83,7 @@ int read_remote_image_connection(char *path, int type);
 /* Called by dump to create a socket connection to the restore side. The socket
  * fd is returned for further writing operations.
  */
-int write_remote_image_connection(char *path, int type, int flags);
+int write_remote_image_connection(char *path, int type);
 
 /* Called by dump/restore when everything is dumped/restored. This function
  * creates a new connection with a special control name. The receiver side uses
