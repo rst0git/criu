@@ -17,6 +17,7 @@ RUN yum install -y \
 	libcap-devel \
 	libnet-devel \
 	libnl3-devel \
+	libffi-devel \
 	make \
 	procps-ng \
 	protobuf-c-devel \
