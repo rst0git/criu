@@ -269,6 +269,7 @@ clean mrproper:
 	$(Q) $(MAKE) $(build)=images $@
 	$(Q) $(MAKE) $(build)=criu $@
 	$(Q) $(MAKE) $(build)=soccr $@
+	$(Q) $(MAKE) $(build)=flog $@
 	$(Q) $(MAKE) $(build)=lib $@
 	$(Q) $(MAKE) $(build)=compel $@
 	$(Q) $(MAKE) $(build)=compel/plugins $@
