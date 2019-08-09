@@ -11,6 +11,7 @@
 typedef struct {
 	char		*input_filename;
 	char		*output_filename;
+	char		*binlog_filename;
 	char		*prefix;
 	FILE		*fout;
 } piegen_opt_t;

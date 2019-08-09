@@ -307,7 +307,7 @@ void log_set_loglevel(unsigned int level)
 	current_loglevel = level;
 
 	libsoccr_set_log(level, soccr_print_on_level);
-	compel_log_init(vprint_on_level, level);
+	//compel_log_init(vprint_on_level, level);
 }
 
 unsigned int log_get_loglevel(void)

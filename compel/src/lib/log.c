@@ -32,7 +32,32 @@ void compel_print_on_level(unsigned int loglevel, const char *format, ...)
 
 	if (fn != NULL && !pr_quelled(loglevel)) {
 		va_start(params, format);
-		fn(loglevel, format, params);
+		fn(loglevel, format, 1, 0, params);
 		va_end(params);
 	}
 }
+
+void compel_print_on_level_msg(unsigned int loglevel,
+        unsigned int nargs,  const char *format,  unsigned int mask,...)
+{
+	va_list params;
+	compel_log_fn fn = logfn;
+
+	if (fn != NULL && !pr_quelled(loglevel)) {
+		va_start(params, mask);
+		fn(loglevel, format, nargs, mask, params);
+		va_end(params);
+	}
+}
+
+/*void compel_print_on_level_msg(unsigned int loglevel, size_t mbuf_size, unsigned int nargs, unsigned int mask, const char *format, ...)
+{
+	va_list params;
+	compel_log_fn fn = logfn;
+
+	if (fn != NULL && !pr_quelled(loglevel)) {
+		va_start(params, format);
+		fn(loglevel, format, mbuf_size, nargs, params);
+		va_end(params);
+	}
+}*/
