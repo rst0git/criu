@@ -14,7 +14,7 @@
 #include "common/compiler.h"
 
 #include "cr_options.h"
-#include "image.h"
+#include "img-remote.h"
 #include "util.h"
 #include "log.h"
 
@@ -71,11 +71,7 @@ int cpu_dump_cpuinfo(void)
 	CpuinfoEntry cpu_info = CPUINFO_ENTRY__INIT;
 	CpuinfoX86Entry cpu_x86_info = CPUINFO_X86_ENTRY__INIT;
 	CpuinfoX86Entry *cpu_x86_info_ptr = &cpu_x86_info;
-	struct cr_img *img;
-
-	img = open_image(CR_FD_CPUINFO, O_DUMP);
-	if (!img)
-		return -1;
+	int ret = -1;
 
 	cpu_info.x86_entry		= &cpu_x86_info_ptr;
 	cpu_info.n_x86_entry		= 1;
@@ -100,13 +96,17 @@ int cpu_dump_cpuinfo(void)
 	if (rt_cpu_info.x86_model_id[0])
 		cpu_x86_info.model_id = rt_cpu_info.x86_model_id;
 
-	if (pb_write_one(img, &cpu_info, PB_CPUINFO) < 0) {
-		close_image(img);
-		return -1;
+	if (opts.remote) {
+		ret = remote_send_entry(&cpu_info, PB_CPUINFO, CR_FD_CPUINFO);
+	} else {
+		struct cr_img *img = open_image(CR_FD_CPUINFO, O_DUMP);
+		if (img) {
+			ret = pb_write_one(img, &cpu_info, PB_CPUINFO);
+			close_image(img);
+		}
 	}
 
-	close_image(img);
-	return 0;
+	return ret;
 }
 
 #define __ins_bit(__l, __v)	(1u << ((__v) - 32u * (__l)))
@@ -408,14 +408,18 @@ int cpu_validate_cpuinfo(void)
 	compel_cpuinfo_t *cpu_info = NULL;
 	CpuinfoX86Entry *img_x86_entry;
 	CpuinfoEntry *img_cpu_info;
-	struct cr_img *img;
+	struct cr_img *img = NULL;
 	int ret = -1;
 
-	img = open_image(CR_FD_CPUINFO, O_RSTR);
-	if (!img)
-		return -1;
+	if (opts.remote) {
+		ret = remote_read_one((void**)&img_cpu_info, PB_CPUINFO, CR_FD_CPUINFO);
+	} else {
+		img = open_image(CR_FD_CPUINFO, O_RSTR);
+		if (img)
+			ret = pb_read_one(img, &img_cpu_info, PB_CPUINFO);
+	}
 
-	if (pb_read_one(img, &img_cpu_info, PB_CPUINFO) < 0)
+	if (ret < 0)
 		goto err;
 
 	if (img_cpu_info->n_x86_entry != 1) {

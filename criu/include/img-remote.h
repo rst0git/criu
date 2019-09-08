@@ -1,65 +1,20 @@
+#include <sys/epoll.h>
 #include <limits.h>
 #include <stdbool.h>
 
 #include <stdint.h>
 #include "common/list.h"
-#include <pthread.h>
-#include <semaphore.h>
 
 #ifndef IMAGE_REMOTE_H
 #define	IMAGE_REMOTE_H
 
 #define FINISH 0
-#define DEFAULT_CACHE_SOCKET "img-cache.sock"
 #define DEFAULT_PROXY_SOCKET "img-proxy.sock"
+
+#include "image.h"
 
 #define DEFAULT_LISTEN 50
 #define BUF_SIZE 4096
-
-struct rbuf {
-	char buffer[BUF_SIZE];
-	int nbytes; /* How many bytes are in the buffer. */
-	struct list_head l;
-};
-
-struct rimage {
-	/* File name (identifier) */
-	char path[PATH_MAX];
-	/* Image type (identifer) */
-	int type;
-	/* List anchor. */
-	struct list_head l;
-	/* List of buffers that compose the image. */
-	struct list_head buf_head;
-	/* Number of bytes. */
-	uint64_t size;
-	/* Note: forward (send) operation only. Buffer to start forwarding. */
-	struct rbuf *curr_fwd_buf;
-	/* Note: forward (send) operation only. Number of fwd bytes in 'curr_fw_buf'. */
-	uint64_t curr_fwd_bytes;
-};
-
-/* Structure that describes the state of a remote operation on remote images. */
-struct roperation {
-	/* List anchor. */
-	struct list_head l;
-	/* File descriptor being used. */
-	int fd;
-	/* File name (identifier) */
-	char path[PATH_MAX];
-	/* Image type (identifer) */
-	int type;
-	/* Remote image being used (may be null if the operation is pending). */
-	struct rimage *rimg;
-	/* Note: recv operation only. How much bytes should be received. */
-	uint64_t size;
-	/* Note: recv operation only. Buffer being written. */
-	struct rbuf *curr_recv_buf; // TODO - needed? Could be replaced by list.last!
-	/* Note: send operation only. Pointer to buffer being sent. */
-	struct rbuf *curr_sent_buf;
-	/* Note: send operation only. Number of bytes sent in 'curr_send_buf. */
-	uint64_t curr_sent_bytes;
-};
 
 /* This is the proxy to cache TCP socket FD. */
 extern int remote_sk;
@@ -81,7 +36,7 @@ int read_remote_image_connection(char *path, int type);
 /* Called by dump to create a socket connection to the restore side. The socket
  * fd is returned for further writing operations.
  */
-int write_remote_image_connection(char *path, int type);
+int write_remote_image_connection(char *path, int type, uint64_t size);
 
 /* Called by dump/restore when everything is dumped/restored. This function
  * creates a new connection with a special control name. The receiver side uses
@@ -99,11 +54,43 @@ int image_proxy(bool background, char *local_proxy_path);
  * socket connections and caches them until they are requested by the restore
  * process.
  */
-int image_cache(bool background, char *local_cache_path);
+int image_cache();
+
+/* Structure that describes the state of a remote operation on remote images. */
+struct roperation {
+	/* List anchor. */
+	struct list_head l;
+	/* File descriptor being used. */
+	int fd;
+	/* File path (identifies) */
+	char path[PATH_MAX];
+	/* Image fd type, specified in image-desc.h */
+	int type;
+	/* Remote image being used (may be null if the operation is pending). */
+	struct rimage *rimg;
+	/* If fd should be closed when the operation is done. */
+	bool close_fd;
+	/* Note: recv operation only. How much bytes should be received. */
+	uint64_t size;
+	/* Note: recv operation only. Buffer being written. */
+	struct rbuf *curr_recv_buf; // TODO - needed? Could be replaced by list.last!
+	/* Note: send operation only. Pointer to buffer being sent. */
+	struct rbuf *curr_sent_buf;
+	/* Note: send operation only. Number of bytes sent in 'curr_send_buf. */
+	uint64_t curr_sent_bytes;
+};
 
 /* Reads (discards) 'len' bytes from fd. This is used to emulate the function
  * lseek, which is used to advance the file needle.
  */
 int skip_remote_bytes(int fd, unsigned long len);
+
+struct rimage *new_remote_image(char *path);
+int event_set(int epoll_fd, int op, int fd, uint32_t events, void *data);
+int64_t pb_read_obj(int fd, void **pobj, int type);
+int get_img_from_cache(const char *path, int type);
+
+int remote_read_one(void **entry, int pbtype, int crtype, ...);
+int remote_send_entry(void *entry, int pbtype, int crtype, ...);
 
 #endif

@@ -8,6 +8,8 @@
 #include "namespaces.h"
 #include "sysctl.h"
 #include "uts_ns.h"
+#include "img-remote.h"
+#include "cr_options.h"
 
 #include "protobuf.h"
 #include "images/utsns.pb-c.h"
@@ -15,13 +17,8 @@
 int dump_uts_ns(int ns_id)
 {
 	int ret;
-	struct cr_img *img;
 	struct utsname ubuf;
 	UtsnsEntry ue = UTSNS_ENTRY__INIT;
-
-	img = open_image(CR_FD_UTSNS, O_DUMP, ns_id);
-	if (!img)
-		return -1;
 
 	ret = uname(&ubuf);
 	if (ret < 0) {
@@ -32,27 +29,37 @@ int dump_uts_ns(int ns_id)
 	ue.nodename = ubuf.nodename;
 	ue.domainname = ubuf.domainname;
 
-	ret = pb_write_one(img, &ue, PB_UTSNS);
+	if (opts.remote) {
+		ret = remote_send_entry(&ue, PB_UTSNS, CR_FD_UTSNS, ns_id);
+	} else {
+		struct cr_img *img = open_image(CR_FD_UTSNS, O_DUMP, ns_id);
+		if (img) {
+			ret = pb_write_one(img, &ue, PB_UTSNS);
+			close_image(img);
+		}
+	}
 err:
-	close_image(img);
-	return ret < 0 ? -1 : 0;
+	return ret;
 }
 
 int prepare_utsns(int pid)
 {
-	int ret;
-	struct cr_img *img;
+	int ret = -1;
+	struct cr_img *img = NULL;
 	UtsnsEntry *ue;
 	struct sysctl_req req[] = {
 		{ "kernel/hostname" },
 		{ "kernel/domainname" },
 	};
 
-	img = open_image(CR_FD_UTSNS, O_RSTR, pid);
-	if (!img)
-		return -1;
+	if (opts.remote) {
+		ret = remote_read_one((void **)&ue, PB_UTSNS, CR_FD_UTSNS, pid);
+	} else {
+		img = open_image(CR_FD_UTSNS, O_RSTR, pid);
+		if (img)
+			ret = pb_read_one(img, &ue, PB_UTSNS);
+	}
 
-	ret = pb_read_one(img, &ue, PB_UTSNS);
 	if (ret < 0)
 		goto out;
 

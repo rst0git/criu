@@ -8,7 +8,7 @@
 #include "asm/types.h"
 
 #include "cr_options.h"
-#include "image.h"
+#include "img-remote.h"
 #include "util.h"
 #include "log.h"
 #include "cpu.h"
@@ -34,12 +34,8 @@ int cpu_dump_cpuinfo(void)
 	CpuinfoEntry cpu_info = CPUINFO_ENTRY__INIT;
 	CpuinfoPpc64Entry cpu_ppc64_info = CPUINFO_PPC64_ENTRY__INIT;
 	CpuinfoPpc64Entry *cpu_ppc64_info_ptr = &cpu_ppc64_info;
-	struct cr_img *img;
 	int ret = -1;
 
-	img = open_image(CR_FD_CPUINFO, O_DUMP);
-	if (!img)
-		return -1;
 
 	cpu_info.ppc64_entry = &cpu_ppc64_info_ptr;
 	cpu_info.n_ppc64_entry = 1;
@@ -48,9 +44,16 @@ int cpu_dump_cpuinfo(void)
 	cpu_ppc64_info.n_hwcap = 2;
 	cpu_ppc64_info.hwcap = rt_cpuinfo.hwcap;
 
-	ret = pb_write_one(img, &cpu_info, PB_CPUINFO);
+	if (opts.remote) {
+		ret = remote_send_entry(&cpu_info, PB_CPUINFO, CR_FD_CPUINFO);
+	} else {
+		struct cr_img *img = open_image(CR_FD_CPUINFO, O_DUMP);
+		if (img) {
+			ret = pb_write_one(img, &cpu_info, PB_CPUINFO);
+			close_image(img);
+		}
+	}
 
-	close_image(img);
 	return ret;
 }
 
@@ -58,13 +61,18 @@ int cpu_validate_cpuinfo(void)
 {
 	CpuinfoEntry *cpu_info;
 	CpuinfoPpc64Entry *cpu_ppc64_entry;
-	struct cr_img *img;
+	struct cr_img *img = NULL;
 	int ret = -1;
-	img = open_image(CR_FD_CPUINFO, O_RSTR);
-	if (!img)
-		return -1;
 
-	if (pb_read_one(img, &cpu_info, PB_CPUINFO) < 0)
+	if (opts.remote) {
+		ret = remote_read_one((void**)&cpu_info, PB_CPUINFO, CR_FD_CPUINFO);
+	} else {
+		img = open_image(CR_FD_CPUINFO, O_RSTR);
+		if (img)
+			ret = pb_read_one(img, &cpu_info, PB_CPUINFO);
+	}
+
+	if (ret < 0)
 		goto error;
 
 	if (cpu_info->n_ppc64_entry != 1) {

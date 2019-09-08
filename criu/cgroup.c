@@ -17,6 +17,7 @@
 #include "criu-log.h"
 #include "util.h"
 #include "imgset.h"
+#include "img-remote.h"
 #include "util-pie.h"
 #include "namespaces.h"
 #include "seize.h"
@@ -922,7 +923,10 @@ int dump_cgroups(void)
 	}
 
 	pr_info("Writing CG image\n");
-	ret = pb_write_one(img_from_set(glob_imgset, CR_FD_CGROUP), &cg, PB_CGROUP);
+	if (opts.remote)
+		ret = remote_send_entry(&cg, PB_CGROUP, CR_FD_CGROUP);
+	else
+		ret = pb_write_one(img_from_set(glob_imgset, CR_FD_CGROUP), &cg, PB_CGROUP);
 err:
 	free_sets(&cg, cg.n_sets);
 	xfree(cg.controllers);
@@ -1863,14 +1867,22 @@ int prepare_cgroup(void)
 	struct cr_img *img;
 	CgroupEntry *ce;
 
-	img = open_image(CR_FD_CGROUP, O_RSTR);
-	if (!img)
-		return -1;
+	if (!opts.remote) {
+		img = open_image(CR_FD_CGROUP, O_RSTR);
+		if (!img)
+			return -1;
 
-	ret = pb_read_one_eof(img, &ce, PB_CGROUP);
-	close_image(img);
-	if (ret <= 0) /* Zero is OK -- no sets there. */
-		return ret;
+		ret = pb_read_one_eof(img, &ce, PB_CGROUP);
+		close_image(img);
+
+		if (ret <= 0) /* Zero is OK -- no sets there. */
+			return ret;
+	} else {
+		if (remote_read_one((void **)&ce, PB_CGROUP, CR_FD_CGROUP)) {
+			pr_debug("No cgroup image\n");
+			return 0;
+		}
+	}
 
 	if (rewrite_cgroup_roots(ce))
 		return -1;

@@ -145,6 +145,13 @@ void write_stats(int what)
 	char *name;
 	struct cr_img *img;
 
+	/* TODO(rst0git): Use better performance metrics for evaluation of
+	 * live migration. The three most commonly used are total migration
+	 * time, down time, and amount of data transfered.
+	 */
+	if (opts.remote)
+		return;
+
 	pr_info("Writing stats\n");
 	if (what == DUMP_STATS) {
 		stats.dump = &ds_entry;
