@@ -18,7 +18,6 @@
 #include "xmalloc.h"
 #include "protobuf.h"
 #include "images/pagemap.pb-c.h"
-#include "img-remote.h"
 
 #ifndef SEEK_DATA
 #define SEEK_DATA	3
@@ -144,12 +143,9 @@ static void skip_pagemap_pages(struct page_read *pr, unsigned long len)
 	if (!len)
 		return;
 
-	if (pagemap_present(pr->pe)) {
-		if (opts.remote)
-			if (skip_remote_bytes(img_raw_fd(pr->pi), len))
-				pr_perror("Error skipping remote bytes");
+	if (pagemap_present(pr->pe))
 		pr->pi_off += len;
-	}
+
 	pr->cvaddr += len;
 }
 
@@ -404,9 +400,8 @@ static int maybe_read_page_local(struct page_read *pr, unsigned long vaddr,
 
 	return ret;
 }
-
 static int maybe_read_page_img_cache(struct page_read *pr, unsigned long vaddr,
-				     int nr, void *buf, unsigned flags)
+				    int nr, void *buf, unsigned flags)
 {
 	unsigned long len = nr * PAGE_SIZE;
 	int fd = img_raw_fd(pr->pi);
@@ -421,7 +416,7 @@ static int maybe_read_page_img_cache(struct page_read *pr, unsigned long vaddr,
 			return -1;
 		}
 		curr += ret;
-		if (curr == len)
+		if (curr >= len)
 			break;
 	}
 
@@ -533,11 +528,11 @@ static int process_async_reads(struct page_read *pr)
 		ssize_t ret;
 		off_t start = piov->from;
 		struct iovec *iovs = piov->to;
-
-		pr_debug("Read piov iovs %d, from %ju, len %ju, first %p:%zu\n",
-				piov->nr, piov->from, piov->end - piov->from,
-				piov->to->iov_base, piov->to->iov_len);
 more:
+		pr_debug("(fd=%d)Read piov iovs %d, from %ju, len %ju, first %p:%zu\n",
+				fd, piov->nr, piov->from, piov->end - piov->from,
+				piov->to->iov_base, piov->to->iov_len);
+
 		ret = preadv(fd, piov->to, piov->nr, piov->from);
 		if (fault_injected(FI_PARTIAL_PAGES)) {
 			/*
@@ -632,6 +627,9 @@ static int try_open_parent(int dfd, unsigned long id, struct page_read *pr, int 
 {
 	int pfd, ret;
 	struct page_read *parent = NULL;
+
+	if(opts.remote)
+		goto out;
 
 	pfd = openat(dfd, CR_PARENT_LINK, O_RDONLY);
 	if (pfd < 0 && errno == ENOENT)
@@ -759,6 +757,7 @@ int open_page_read_at(int dfd, unsigned long img_id, struct page_read *pr, int p
 	pr_flags &= ~PR_REMOTE;
 	if (opts.auto_dedup)
 		pr_flags |= PR_MOD;
+
 	if (pr_flags & PR_MOD)
 		flags = O_RDWR;
 	else
@@ -795,7 +794,7 @@ int open_page_read_at(int dfd, unsigned long img_id, struct page_read *pr, int p
 		return 0;
 	}
 
-	if (!opts.remote && try_open_parent(dfd, img_id, pr, pr_flags)) {
+	if (try_open_parent(dfd, img_id, pr, pr_flags)) {
 		close_image(pr->pmi);
 		return -1;
 	}

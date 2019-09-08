@@ -30,7 +30,6 @@ obj-y			+= fsnotify.o
 obj-y			+= image-desc.o
 obj-y			+= image.o
 obj-y			+= img-remote.o
-obj-y			+= img-proxy.o
 obj-y			+= img-cache.o
 obj-y			+= ipc_ns.o
 obj-y			+= irmap.o

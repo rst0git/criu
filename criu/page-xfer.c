@@ -25,7 +25,6 @@
 #include "parasite-syscall.h"
 #include "rst_info.h"
 #include "stats.h"
-#include "img-remote.h"
 #include "tls.h"
 
 static int page_server_sk = -1;
@@ -248,9 +247,13 @@ static int write_pages_loc(struct page_xfer *xfer,
 {
 	ssize_t ret;
 	ssize_t curr = 0;
+	pid_t fd = img_raw_fd(xfer->pi);
+
+	if (opts.remote)
+		remote_send_raw_data(xfer->pi->path, xfer->pi->type, len);
 
 	while (1) {
-		ret = splice(p, NULL, img_raw_fd(xfer->pi), NULL, len - curr, SPLICE_F_MOVE);
+		ret = splice(p, NULL, fd, NULL, len - curr, SPLICE_F_MOVE);
 		if (ret == -1) {
 			pr_perror("Unable to spice data");
 			return -1;
@@ -402,8 +405,7 @@ static int open_page_local_xfer(struct page_xfer *xfer, int fd_type, unsigned lo
 			pr_perror("No parent image found, though parent directory is set");
 			xfree(xfer->parent);
 			xfer->parent = NULL;
-			if (!opts.remote)
-				close(pfd);
+			close(pfd);
 			goto out;
 		}
 		close(pfd);

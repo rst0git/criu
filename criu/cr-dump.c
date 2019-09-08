@@ -80,7 +80,6 @@
 #include "fault-injection.h"
 #include "dump.h"
 #include "eventpoll.h"
-#include "img-remote.h"
 
 /*
  * Architectures can overwrite this function to restore register sets that
@@ -1683,6 +1682,9 @@ static int cr_dump_finish(int ret)
 {
 	int post_dump_ret = 0;
 
+	if (remote_dump_finish())
+		ret = -1;
+
 	if (disconnect_from_page_server())
 		ret = -1;
 
@@ -1756,11 +1758,6 @@ static int cr_dump_finish(int ret)
 	free_userns_maps();
 
 	close_service_fd(CR_PROC_FD_OFF);
-
-	if (opts.remote && (finish_remote_dump() < 0)) {
-		pr_err("Finish remote dump failed.\n");
-		return post_dump_ret ? : 1;
-	}
 
 	if (ret) {
 		pr_err("Dumping FAILED.\n");
