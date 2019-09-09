@@ -32,7 +32,7 @@ int check_img_inventory(void)
 	InventoryEntry *he;
 
 	if (opts.remote) {
-		if (remote_read_one((void **)&he, PB_INVENTORY, CR_FD_INVENTORY)) {
+		if (remote_read_one(&he, PB_INVENTORY, CR_FD_INVENTORY)) {
 			pr_err("Failed to open inventory\n");
 			return -1;
 		}

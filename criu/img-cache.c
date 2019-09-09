@@ -12,7 +12,6 @@
 #include "criu-log.h"
 #include "img-remote.h"
 #include "images/inventory.pb-c.h"
-#include "images/pstree.pb-c.h"
 #include "images/remote-image.pb-c.h"
 #include "protobuf-desc.h"
 #include "util.h"
@@ -232,7 +231,7 @@ int image_cache()
 	return ret == -1;
 }
 
-int remote_read_one(void **entry, int pbtype, int crtype, ...)
+int do_remote_read_one(void **entry, int pbtype, int crtype, ...)
 {
 	struct rbuf *img;
 	char name[PATH_MAX];
@@ -244,7 +243,6 @@ int remote_read_one(void **entry, int pbtype, int crtype, ...)
 
 	switch(pbtype) {
 	case PB_INVENTORY:
-	case PB_PSTREE:
 	case PB_CGROUP:
 	case PB_CPUINFO:
 	case PB_UTSNS:

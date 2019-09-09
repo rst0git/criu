@@ -28,11 +28,6 @@ struct rimage *get_rimg_by_name(const char *path, int type);
 
 int setup_UNIX_server_socket(char *path);
 
-/* Called by restore to get the fd correspondent to a particular path.  This call
- * will block until the connection is received.
- */
-int read_remote_image_connection(char *path, int type);
-
 /* Called by dump to create a socket connection to the restore side. The socket
  * fd is returned for further writing operations.
  */
@@ -43,7 +38,6 @@ int write_remote_image_connection(char *path, int type, uint64_t size);
  * it to ack that no more files are coming.
  */
 int finish_remote_dump();
-int finish_remote_restore();
 
 /* Starts an image proxy daemon (dump side). It receives image files through
  * socket connections and forwards them to the image cache (restore side).
@@ -90,7 +84,10 @@ int event_set(int epoll_fd, int op, int fd, uint32_t events, void *data);
 int64_t pb_read_obj(int fd, void **pobj, int type);
 int get_img_from_cache(const char *path, int type);
 
-int remote_read_one(void **entry, int pbtype, int crtype, ...);
+int do_remote_read_one(void **entry, int pbtype, int crtype, ...);
+#define remote_read_one(entry, pbtype, crtype, ...)	\
+	do_remote_read_one((void **)entry, pbtype, crtype, ##__VA_ARGS__)
+
 int remote_send_entry(void *entry, int pbtype, int crtype, ...);
 
 #endif

@@ -1878,7 +1878,7 @@ int prepare_cgroup(void)
 		if (ret <= 0) /* Zero is OK -- no sets there. */
 			return ret;
 	} else {
-		if (remote_read_one((void **)&ce, PB_CGROUP, CR_FD_CGROUP)) {
+		if (remote_read_one(&ce, PB_CGROUP, CR_FD_CGROUP)) {
 			pr_debug("No cgroup image\n");
 			return 0;
 		}

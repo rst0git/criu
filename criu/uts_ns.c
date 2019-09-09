@@ -53,7 +53,7 @@ int prepare_utsns(int pid)
 	};
 
 	if (opts.remote) {
-		ret = remote_read_one((void **)&ue, PB_UTSNS, CR_FD_UTSNS, pid);
+		ret = remote_read_one(&ue, PB_UTSNS, CR_FD_UTSNS, pid);
 	} else {
 		img = open_image(CR_FD_UTSNS, O_RSTR, pid);
 		if (img)

@@ -185,17 +185,6 @@ static inline int64_t write_header(int fd, char *path, int type, uint64_t size)
 	return pb_write_obj(fd, &ri, PB_REMOTE_IMAGE);
 }
 
-static inline int64_t read_reply_header(int fd, int *error)
-{
-	LocalImageReplyEntry *lir;
-	int ret = pb_read_obj(fd, (void **)&lir, PB_LOCAL_IMAGE_REPLY);
-
-	if (ret > 0)
-		*error = lir->error;
-	free(lir);
-	return ret;
-}
-
 static struct roperation *new_remote_operation(char *path, int type, int cli_fd)
 {
 	struct roperation *rop = xzalloc(sizeof(struct roperation));
@@ -611,39 +600,6 @@ static int64_t send_image_async(struct roperation *op)
 	}
 }
 
-int read_remote_image_connection(char *path, int type)
-{
-	int error = 0;
-	int sockfd = setup_UNIX_client_socket(DEFAULT_PROXY_SOCKET);
-
-	if (sockfd < 0) {
-		pr_err("Error opening local connection for %s\n", path);
-		return -1;
-	}
-
-	if (write_header(sockfd, path, type, 0) < 0) {
-		pr_err("Error writing header for %s\n", path);
-		return -1;
-	}
-
-	if (read_reply_header(sockfd, &error) < 0) {
-		pr_err("Error reading reply header for %s\n", path);
-		return -1;
-	}
-
-	if (!error || path[0] == FINISH)
-		return sockfd;
-
-	if (error == ENOENT) {
-		pr_info("Image does not exist (%s)\n", path);
-		close(sockfd);
-		return -ENOENT;
-	}
-	pr_err("Unexpected error returned: %d (%s)\n", error, path);
-	close(sockfd);
-	return -1;
-}
-
 int write_remote_image_connection(char *path, int type, uint64_t size)
 {
 	int sockfd = setup_UNIX_client_socket(DEFAULT_PROXY_SOCKET);
@@ -665,20 +621,6 @@ int finish_remote_dump(void)
 
 	if (fd == -1) {
 		pr_err("Unable to open finish dump connection");
-		return -1;
-	}
-
-	close(fd);
-	return 0;
-}
-
-int finish_remote_restore(void)
-{
-	pr_info("Restore side is calling finish\n");
-	int fd = read_remote_image_connection(FINISH, 0);
-
-	if (fd == -1) {
-		pr_err("Unable to open finish restore connection\n");
 		return -1;
 	}
 

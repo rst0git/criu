@@ -412,7 +412,7 @@ int cpu_validate_cpuinfo(void)
 	int ret = -1;
 
 	if (opts.remote) {
-		ret = remote_read_one((void**)&img_cpu_info, PB_CPUINFO, CR_FD_CPUINFO);
+		ret = remote_read_one(&img_cpu_info, PB_CPUINFO, CR_FD_CPUINFO);
 	} else {
 		img = open_image(CR_FD_CPUINFO, O_RSTR);
 		if (img)

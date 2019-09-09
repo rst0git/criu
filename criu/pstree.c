@@ -278,9 +278,6 @@ int dump_pstree(struct pstree_item *root_item)
 {
 	struct pstree_item *item = root_item;
 	PstreeEntry e = PSTREE_ENTRY__INIT;
-	unsigned long len;
-	void *buf;
-	int fd;
 	int ret = -1, i;
 	struct cr_img *img = NULL;
 
@@ -305,71 +302,38 @@ int dump_pstree(struct pstree_item *root_item)
 		}
 	}
 
-	if (!opts.remote) {
-		img = open_image(CR_FD_PSTREE, O_DUMP);
-		if (!img)
-			return -1;
+	img = open_image(CR_FD_PSTREE, O_DUMP);
+	if (!img)
+		return -1;
 
-		for_each_pstree_item(item) {
-			pr_info("Process: %d(%d)\n", vpid(item), item->pid->real);
+	for_each_pstree_item(item) {
+		pr_info("Process: %d(%d)\n", vpid(item), item->pid->real);
 
-			e.pid		= vpid(item);
-			e.ppid		= item->parent ? vpid(item->parent) : 0;
-			e.pgid		= item->pgid;
-			e.sid		= item->sid;
-			e.n_threads	= item->nr_threads;
+		e.pid		= vpid(item);
+		e.ppid		= item->parent ? vpid(item->parent) : 0;
+		e.pgid		= item->pgid;
+		e.sid		= item->sid;
+		e.n_threads	= item->nr_threads;
 
-			e.threads = xmalloc(sizeof(e.threads[0]) * e.n_threads);
-			if (!e.threads)
-				goto err;
+		e.threads = xmalloc(sizeof(e.threads[0]) * e.n_threads);
+		if (!e.threads)
+			goto err;
 
-			for (i = 0; i < item->nr_threads; i++)
-				e.threads[i] = item->threads[i].ns[0].virt;
+		for (i = 0; i < item->nr_threads; i++)
+			e.threads[i] = item->threads[i].ns[0].virt;
 
-			ret = pb_write_one(img, &e, PB_PSTREE);
-			xfree(e.threads);
+		ret = pb_write_one(img, &e, PB_PSTREE);
 
-			if (ret)
-				goto err;
-		}
-		ret = 0;
-	} else {
-	    for_each_pstree_item(item) {
-		    e.pid = vpid(item);
-		    e.ppid = item->parent ? vpid(item->parent) : 0;
-		    e.pgid = item->pgid;
-		    e.sid = item->sid;
-		    e.n_threads = item->nr_threads;
-		    e.threads = xmalloc(sizeof(e.threads[0]) * e.n_threads);
-		    if (!e.threads)
-			    goto err;
-		    for (i = 0; i < item->nr_threads; ++i)
-			    e.threads[i] = item->threads[i].ns[0].virt;
-		    len = pstree_entry__get_packed_size(&e);
-		    buf = xmalloc(len);
-		    if (!buf)
-			    goto err;
+		xfree(e.threads);
 
-		    if (pstree_entry__pack(&e, buf) != len) {
-			    pr_err("Failed to serialize inventory object\n");
-			    return -1;
-		    }
-
-		    fd = write_remote_image_connection("pstree.img", CR_FD_PSTREE, len);
-		    fd_set_nonblocking(fd, false);
-
-		    pr_info("Sending pstree with size: %ld\n", len);
-		    ret = (send(fd, buf, len, 0) != len);
-
-		    xfree(buf);
-		    close(fd);
-
-	    }
+		if (ret)
+			goto err;
 	}
+
+	ret = 0;
 err:
 	pr_info("----------------------------------------\n");
-	if (!opts.remote)
-		close_image(img);
+	close_image(img);
 	return ret;
 }
 
@@ -546,21 +510,16 @@ static int read_pstree_image(pid_t *pid_max)
 
 	pr_info("Reading image tree\n");
 
-	if (!opts.remote) {
-		img = open_image(CR_FD_PSTREE, O_RSTR);
-		if (!img)
-			return -1;
-	}
+
+	img = open_image(CR_FD_PSTREE, O_RSTR);
+	if (!img)
+		return -1;
+
 	while (1) {
 		PstreeEntry *e;
-		if (!opts.remote) {
-			ret = pb_read_one_eof(img, &e, PB_PSTREE);
-			if (ret <= 0)
-				break;
-		} else {
-			if (remote_read_one((void**)&e, PB_PSTREE, CR_FD_PSTREE))
-				break;
-		}
+		ret = pb_read_one_eof(img, &e, PB_PSTREE);
+		if (ret <= 0)
+			break;
 
 		ret = -1;
 		pi = lookup_create_item(e->pid);
