@@ -22,7 +22,7 @@ RUN dnf install -y \
 	python3-PyYAML \
 	python3-future \
 	python3-protobuf \
-	python3-junit_xml \
+	python3-pip \
 	sudo \
 	tar \
 	which \
@@ -32,6 +32,8 @@ RUN dnf install -y \
 
 RUN ln -sf python3 /usr/bin/python
 ENV PYTHON=python3
+
+RUN pip3 install junit_xml
 
 COPY . /criu
 WORKDIR /criu
