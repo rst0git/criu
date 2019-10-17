@@ -1591,7 +1591,7 @@ static int mount_proc(void)
 	int fd, ret;
 	char proc_mountpoint[] = "crtools-proc.XXXXXX";
 
-	if (root_ns_mask == 0)
+	if (!(root_ns_mask & CLONE_NEWNS && root_ns_mask & CLONE_NEWPID))
 		fd = ret = open("/proc", O_DIRECTORY);
 	else {
 		if (mkdtemp(proc_mountpoint) == NULL) {
