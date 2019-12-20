@@ -360,7 +360,7 @@ public class CheckpointRestore {
 	private void checkpoint(String pid, String checkpointOpt) throws IOException, InterruptedException {
 		ProcessBuilder builder;
 		System.out.println("Checkpointing process " + pid);
-		String command = "../../criu/criu dump --shell-job -t " + pid + " -vvv -D " + logFolder + " -o dump.log";
+		String command = "../../criu/criu dump --shell-job -t " + pid + " -D " + logFolder + " -v4 -o dump.log";
 		if (0 == checkpointOpt.length()) {
 			String[] cmd = command.split(" ");
 			builder = new ProcessBuilder(cmd);
@@ -377,10 +377,10 @@ public class CheckpointRestore {
 			/*
 			 * Print the error stream
 			 */
-			String line = stdError.readLine();
-			while (null != line) {
-				System.out.println(line);
-				line = stdError.readLine();
+			BufferedReader br = new BufferedReader(new FileReader(logFolder + "dump.log"));
+			String lines;
+			while ((lines = br.readLine()) != null) {
+				System.out.println(lines);
 			}
 
 			mappedByteBuffer.putChar(Helper.MAPPED_INDEX, Helper.STATE_TERMINATE);
@@ -390,6 +390,7 @@ public class CheckpointRestore {
 			String folderSuffix = copyFiles();
 
 			Assert.fail(testName + ": ERROR: Error during checkpoint: exitCode of checkpoint process was not zero.\nFor more details check dump.log in " + outputFolder + testName + folderSuffix);
+
 			return;
 		}
 
