@@ -1,7 +1,9 @@
 #!/bin/bash
 set -x -e -o pipefail
 
-add-apt-repository -y ppa:projectatomic/ppa
+echo 'deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_18.04/ /' > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+
+wget -nv https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable/xUbuntu_18.04/Release.key -O- | apt-key add -
 
 apt-get install -qq \
     apt-transport-https \
@@ -25,7 +27,8 @@ podman info
 
 criu --version
 
-podman run --name cr -d docker.io/library/alpine /bin/sh -c 'i=0; while true; do echo $i; i=$(expr $i + 1); sleep 1; done'
+# for some reason seccomp policy loading fails
+podman run --name cr -d --security-opt seccomp=unconfined docker.io/library/alpine /bin/sh -c 'i=0; while true; do echo $i; i=$(expr $i + 1); sleep 1; done'
 
 sleep 1
 for i in `seq 50`; do
