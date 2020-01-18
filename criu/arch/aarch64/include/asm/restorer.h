@@ -56,7 +56,7 @@
 			"b   x0				\n"	\
 			:					\
 			: "r"(ret)				\
-			: "sp", "x0", "memory")
+			: "x0", "memory")
 
 
 #define arch_map_vdso(map, compat)		-1
