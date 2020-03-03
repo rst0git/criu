@@ -3,7 +3,7 @@
 #endif
 
 static void scm_fdset_init_chunk(struct scm_fdset *fdset, int nr_fds,
-		void *data, unsigned ch_size)
+		void *data, size_t ch_size)
 {
 	struct cmsghdr *cmsg;
 	static char dummy;
