@@ -25,7 +25,6 @@
 #include "parasite-syscall.h"
 #include "rst_info.h"
 #include "stats.h"
-#include "img-remote.h"
 #include "tls.h"
 
 static int page_server_sk = -1;
@@ -248,9 +247,13 @@ static int write_pages_loc(struct page_xfer *xfer,
 {
 	ssize_t ret;
 	ssize_t curr = 0;
+	pid_t fd = img_raw_fd(xfer->pi);
+
+	if (opts.remote)
+		remote_send_raw_data(xfer->pi->path, xfer->pi->type, len);
 
 	while (1) {
-		ret = splice(p, NULL, img_raw_fd(xfer->pi), NULL, len - curr, SPLICE_F_MOVE);
+		ret = splice(p, NULL, fd, NULL, len - curr, SPLICE_F_MOVE);
 		if (ret == -1) {
 			pr_perror("Unable to spice data");
 			return -1;
@@ -378,34 +381,22 @@ static int open_page_local_xfer(struct page_xfer *xfer, int fd_type, unsigned lo
 	 *    to exist in parent (either pagemap or hole)
 	 */
 	xfer->parent = NULL;
+
+	if (opts.remote)
+		goto out;
+
 	if (fd_type == CR_FD_PAGEMAP || fd_type == CR_FD_SHMEM_PAGEMAP) {
 		int ret;
 		int pfd;
 		int pr_flags = (fd_type == CR_FD_PAGEMAP) ? PR_TASK : PR_SHMEM;
 
-
-		if (opts.remote) {
-			/* Note: we are replacing a real directory FD for a snapshot_id
-			 * index. Since we need the parent of the current snapshot_id,
-			 * we want the current snapshot_id index minus one. It is
-			 * possible that dfd is already a snapshot_id index. We test it
-			 * by comparing it to the service FD. When opening an image (see
-			 * do_open_image) we convert the snapshot_id index into a real
-			 * snapshot_id.
-			 */
-			pfd = get_curr_snapshot_id_idx() - 1;
-			if (pfd < 0)
-				goto out;
-		} else {
-			pfd = openat(get_service_fd(IMG_FD_OFF), CR_PARENT_LINK, O_RDONLY);
-			if (pfd < 0 && errno == ENOENT)
-				goto out;
-		}
+		pfd = openat(get_service_fd(IMG_FD_OFF), CR_PARENT_LINK, O_RDONLY);
+		if (pfd < 0 && errno == ENOENT)
+			goto out;
 
 		xfer->parent = xmalloc(sizeof(*xfer->parent));
 		if (!xfer->parent) {
-			if (!opts.remote)
-				close(pfd);
+			close(pfd);
 			return -1;
 		}
 
@@ -414,12 +405,10 @@ static int open_page_local_xfer(struct page_xfer *xfer, int fd_type, unsigned lo
 			pr_perror("No parent image found, though parent directory is set");
 			xfree(xfer->parent);
 			xfer->parent = NULL;
-			if (!opts.remote)
-				close(pfd);
+			close(pfd);
 			goto out;
 		}
-		if (!opts.remote)
-			close(pfd);
+		close(pfd);
 	}
 
 out:
@@ -948,7 +937,7 @@ int check_parent_local_xfer(int fd_type, unsigned long img_id)
 	int ret, pfd;
 
 	if (opts.remote)
-		return get_curr_parent_snapshot_id_idx() == -1 ? 0 : 1;
+		return 0;
 
 	pfd = openat(get_service_fd(IMG_FD_OFF), CR_PARENT_LINK, O_RDONLY);
 	if (pfd < 0 && errno == ENOENT)

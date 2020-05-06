@@ -6,6 +6,7 @@
 #include "common/compiler.h"
 #include "servicefd.h"
 #include "image-desc.h"
+#include "img-remote.h"
 #include "fcntl.h"
 #include "magic.h"
 #include "bfd.h"
@@ -103,7 +104,6 @@ extern bool img_common_magic;
 #define O_SERVICE	(O_DIRECTORY)
 #define O_DUMP		(O_WRONLY | O_CREAT | O_TRUNC)
 #define O_RSTR		(O_RDONLY)
-#define O_FORCE_LOCAL	(O_SYNC)
 
 struct cr_img {
 	union {
@@ -119,6 +119,7 @@ struct cr_img {
 
 #define EMPTY_IMG_FD	(-404)
 #define LAZY_IMG_FD	(-505)
+#define REMOTE_IMG_FD	(-606)
 
 static inline bool empty_image(struct cr_img *img)
 {
@@ -130,12 +131,19 @@ static inline bool lazy_image(struct cr_img *img)
 	return img->_x.fd == LAZY_IMG_FD;
 }
 
+static inline bool remote_image(struct cr_img *img)
+{
+	return img->_x.fd == REMOTE_IMG_FD;
+}
+
 extern int open_image_lazy(struct cr_img *img);
 
 static inline int img_raw_fd(struct cr_img *img)
 {
 	if (!img)
 		return -1;
+	if (remote_image(img))
+		return remote_sk;
 	if (lazy_image(img) && open_image_lazy(img))
 		return -1;
 

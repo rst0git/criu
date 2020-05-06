@@ -347,6 +347,9 @@ int irmap_predump_run(void)
 	struct cr_img *img;
 	struct irmap_predump *ip;
 
+	if (opts.remote)
+		return 0;
+
 	img = open_image_at(AT_FDCWD, CR_FD_IRMAP_CACHE, O_DUMP);
 	if (!img)
 		return -1;
