@@ -22,13 +22,10 @@ RUN yum install -y \
 	protobuf-c-devel \
 	protobuf-devel \
 	protobuf-python \
-	python \
-	python-flake8 \
-	python-ipaddress \
-	python2-future \
-	python2-junit_xml \
-	python-yaml \
-	python-six \
+	python3 \
+	python3-flake8 \
+	python3-junit_xml \
+	python3-yaml \
 	sudo \
 	tar \
 	which \

@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
-from __future__ import print_function
-import sys, socket
+import sys
+import socket
 import hashlib
 
 sk = socket.fromfd(3, socket.AF_INET, socket.SOCK_STREAM)

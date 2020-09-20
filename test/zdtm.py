@@ -1,7 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # vim: noet ts=8 sw=8 sts=8
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import argparse
 import atexit
 import datetime
@@ -22,11 +20,9 @@ import subprocess
 import sys
 import tempfile
 import time
-from builtins import (input, int, open, range, str, zip)
+import yaml
 
 import pycriu as crpc
-
-import yaml
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -623,14 +619,10 @@ class zdtm_test:
 
 
 def load_module_from_file(name, path):
-    if sys.version_info[0] == 3 and sys.version_info[1] >= 5:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(name, path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-    else:
-        import imp
-        mod = imp.load_source(name, path)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
     return mod
 
 
@@ -1615,7 +1607,7 @@ def check_visible_state(test, state, opts):
         new_maps = new[1][pid]
         if os.getenv("COMPAT_TEST"):
             # the vsyscall vma isn't unmapped from x32 processes
-            vsyscall = u"ffffffffff600000-ffffffffff601000 r-xp"
+            vsyscall = "ffffffffff600000-ffffffffff601000 r-xp"
             if vsyscall in new_maps and vsyscall not in old_maps:
                 new_maps.remove(vsyscall)
         if old_maps != new_maps:
@@ -1921,13 +1913,13 @@ class Launcher:
             self.__junit_test_cases = []
 
             self.__file_report = open(reportname, 'a')
-            print(u"TAP version 13", file=self.__file_report)
-            print(u"# Hardware architecture: " + arch, file=self.__file_report)
-            print(u"# Timestamp: " + now.strftime("%Y-%m-%d %H:%M") +
+            print("TAP version 13", file=self.__file_report)
+            print("# Hardware architecture: " + arch, file=self.__file_report)
+            print("# Timestamp: " + now.strftime("%Y-%m-%d %H:%M") +
                   " (GMT+1)",
                   file=self.__file_report)
-            print(u"# ", file=self.__file_report)
-            print(u"1.." + str(nr_tests), file=self.__file_report)
+            print("# ", file=self.__file_report)
+            print("1.." + str(nr_tests), file=self.__file_report)
         with open("/proc/sys/kernel/tainted") as taintfd:
             self.__taint = taintfd.read()
         if int(self.__taint, 0) != 0:
@@ -1951,7 +1943,7 @@ class Launcher:
             tc.add_skipped_info(reason)
             self.__junit_test_cases.append(tc)
         if self.__file_report:
-            testline = u"ok %d - %s # SKIP %s" % (self.__runtest, name, reason)
+            testline = "ok %d - %s # SKIP %s" % (self.__runtest, name, reason)
             print(testline, file=self.__file_report)
 
     def run_test(self, name, desc, flavor):
@@ -2031,7 +2023,7 @@ class Launcher:
                 failed_flavor = decode_flav(os.WEXITSTATUS(status))
                 self.__failed.append([sub['name'], failed_flavor])
                 if self.__file_report:
-                    testline = u"not ok %d - %s # flavor %s" % (
+                    testline = "not ok %d - %s # flavor %s" % (
                         self.__runtest, sub['name'], failed_flavor)
                     with open(sub['log']) as sublog:
                         output = sublog.read()
@@ -2047,7 +2039,7 @@ class Launcher:
                     add_to_output(sub['log'])
             else:
                 if self.__file_report:
-                    testline = u"ok %d - %s" % (self.__runtest, sub['name'])
+                    testline = "ok %d - %s" % (self.__runtest, sub['name'])
                     print(testline, file=self.__file_report)
 
             if sub['log']:
