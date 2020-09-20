@@ -817,7 +817,7 @@ class groups_test(zdtm_test):
         return 'cd /' + tdir + ' && ' + cmd
 
     def start(self):
-        if (self.__subs):
+        if self.__subs:
             with open(self.__real_name + '.start', 'w') as f:
                 for test in self.__subs:
                     cmd = self.__get_start_cmd(test)
