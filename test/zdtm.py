@@ -1180,8 +1180,7 @@ class criu:
             if self.__test.blocking() or (self.__sat and action == 'restore' and
                                           rst_succeeded):
                 raise test_fail_expected_exc(action)
-            else:
-                raise test_fail_exc("CRIU %s" % action)
+            raise test_fail_exc("CRIU %s" % action)
 
     def __stats_file(self, action):
         return os.path.join(self.__ddir(), "stats-%s" % action)
