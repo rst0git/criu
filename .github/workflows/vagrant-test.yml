@@ -1,0 +1,12 @@
+name: Vagrant Fedora Test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Run Vagrant Fedora Test
+      run: sudo -E make -C scripts/ci vagrant-fedora-no-vdso
