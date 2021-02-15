@@ -21,9 +21,10 @@ apt-get -y purge docker-ce || :
     apt-transport-https \
     ca-certificates \
     curl \
-    software-properties-common
-
-./apt-install podman containernetworking-plugins
+    software-properties-common \
+    podman \
+    conmon \
+    containernetworking-plugins
 
 export SKIP_CI_TEST=1
 
