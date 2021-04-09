@@ -31,6 +31,10 @@ COPY . /criu
 WORKDIR /criu
 ENV $ENV1=yes
 
+# zdtm uses an unversioned python binary to run the tests.
+# let's point python to python3
+RUN  ln -sf /usr/bin/python3 /usr/bin/python
+
 RUN git clean -dfx && date && \
 # Check single object build
 	make -j $(nproc) CC="$CC" criu/parasite-syscall.o && \
