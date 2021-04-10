@@ -383,7 +383,7 @@ docker-build:
 .PHONY: docker-build
 
 docker-test:
-	docker run --rm -it --privileged criu-x86_64 ./test/zdtm.py run -a -x tcp6 -x tcpbuf6 -x static/rtc -x cgroup
+	docker run --rm -it --privileged --cgroupns=host criu-x86_64 ./test/zdtm.py run -a -x tcp6 -x tcpbuf6 -x static/rtc -x cgroup
 .PHONY: docker-test
 
 help:
