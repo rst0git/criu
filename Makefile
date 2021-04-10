@@ -383,7 +383,15 @@ docker-build:
 .PHONY: docker-build
 
 docker-test:
-	docker run --rm -it --privileged --cgroupns=host criu-x86_64 ./test/zdtm.py run -a -x tcp6 -x tcpbuf6 -x static/rtc -x cgroup
+# On Fedora 33 the excluded (inotify) tests fail with
+# Error (criu/mount.c:1078): mnt: The file system 0x1f 0x1f (0x9b) btrfs ./ is inaccessible'
+	docker run --rm -it --privileged --cgroupns=host criu-x86_64 \
+		./test/zdtm.py run -a --keep-going -k always \
+			-x zdtm/static/config_inotify_irmap \
+			-x zdtm/static/fanotify00 \
+			-x zdtm/static/inotify00 \
+			-x zdtm/static/inotify04 \
+			-x zdtm/static/inotify_irmap
 .PHONY: docker-test
 
 help:
