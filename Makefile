@@ -385,7 +385,7 @@ docker-build:
 docker-test:
 # On Fedora 33 the excluded (inotify) tests fail with
 # Error (criu/mount.c:1078): mnt: The file system 0x1f 0x1f (0x9b) btrfs ./ is inaccessible'
-	docker run --rm -it --privileged --cgroupns=host criu-x86_64 \
+	docker run --rm --privileged --cgroupns=host criu-x86_64 \
 		./test/zdtm.py run -a --keep-going -k always \
 			-x zdtm/static/config_inotify_irmap \
 			-x zdtm/static/fanotify00 \
