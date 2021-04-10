@@ -77,7 +77,7 @@ ifeq ($(ARCH),x86)
 endif
 
 ifeq ($(ARCH),mips)
-        DEFINES		:= -DCONFIG_MIPS 
+        DEFINES		:= -DCONFIG_MIPS
 endif
 
 #
@@ -379,7 +379,7 @@ gcov:
 .PHONY: gcov
 
 docker-build:
-	$(MAKE) -C scripts/build/ x86_64 
+	$(MAKE) -C scripts/build/ x86_64
 .PHONY: docker-build
 
 docker-test:
