@@ -46,7 +46,8 @@ function test_restore_loop {
 
 	title_print "Run loop.sh"
 	setsid ./loop.sh < /dev/null &> build/loop.log &
-	P=${!}
+	sleep .1 # wait for loop.sh to start
+	P=$(pgrep -n loop.sh)
 	echo "pid ${P}"
 
 	title_print "Dump loop.sh"
