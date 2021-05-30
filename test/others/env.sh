@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Use Bash POSIX mode
+set -o posix
+
 CRIU=$(readlink -f `dirname ${BASH_SOURCE[0]}`/../../criu/criu)
 criu=$CRIU
 if [ $(which python3) ]; then
