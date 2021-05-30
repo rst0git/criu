@@ -13,6 +13,7 @@ function gen_imgs {
 	PID=$(pgrep -n loop.sh)
 	$CRIU dump -v4 -o dump.log -D ./ -t $PID
 	if [ $? -ne 0 ]; then
+		cat dump.log
 		kill -9 $PID
 		_exit 1
 	fi
