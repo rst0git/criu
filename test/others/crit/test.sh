@@ -16,8 +16,13 @@ function _exit {
 }
 
 function gen_imgs {
-	setsid ./loop.sh < /dev/null &> /dev/null &
-	sleep .1  # wait for loop.sh to start
+	exec {pipe}<> <(:)
+	exec {pipe_r}</proc/self/fd/$pipe
+	setsid ./loop.sh </dev/null &>/proc/self/fd/$pipe &
+	exec {pipe}>&-
+	exec {pipe_r}>&-
+	cat <&${pipe_r}
+
 	PID=$(pgrep -n loop.sh)
 	if ! $CRIU dump -v4 -o dump.log -D ./ -t "$PID"; then
 		cat dump.log
