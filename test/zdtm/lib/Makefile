@@ -6,6 +6,8 @@ LIB	:= libzdtmtst.a
 
 LIBSRC	:= datagen.c msg.c parseargs.c test.c streamutil.c lock.c ns.c tcp.c unix.c fs.c sysctl.c
 
+include ../Makefile.inc
+
 pkg-config-check = $(shell sh -c '$(PKG_CONFIG) $(1) && echo y')
 ifeq ($(call pkg-config-check,libbpf),y)
 LIBSRC	+= bpfmap_zdtm.c
@@ -20,8 +22,6 @@ OBJ	:= $(SRC:%.c=%.o)
 LDLIBS	:= $(LIB)
 
 TARGETS	:= $(LIB) $(BIN)
-
-include ../Makefile.inc
 
 all:	$(TARGETS)
 .PHONY: all
