@@ -25,6 +25,16 @@ make install
 popd
 rm -rf ${tmp_dir}
 
+# FIXME: Currently crun is a default runtime for Podman and it
+# would be good to run these tests with runc as well.
+#
+# However, the latest version of runc currently fails with:
+# Error: container_linux.go:380: starting container process caused:
+#     error adding seccomp filter rule for syscall bdflush:
+#     permission denied: OCI permission denied
+#
+# See https://github.com/containers/podman/issues/10735#issuecomment-869818154
+
 podman info
 
 # shellcheck disable=SC2016
