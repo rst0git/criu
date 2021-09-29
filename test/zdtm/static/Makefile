@@ -108,6 +108,7 @@ TST_NOFILE	:=				\
 		socket-tcp-close0 		\
 		socket-tcp-close1 		\
 		socket-tcp-close2		\
+		socket-tcp-close3		\
 		socket-dump-tcp-close 		\
 		socket-tcp-unconn		\
 		socket-tcp6-unconn		\
