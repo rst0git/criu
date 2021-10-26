@@ -3,7 +3,7 @@ Section: admin
 Priority: optional
 Maintainer: Salvatore Bonaccorso <carnil@debian.org>
 Build-Depends:
- asciidoc,
+ asciidoctor,
  debhelper (>= 11),
  dh-python,
  libcap-dev,
@@ -14,8 +14,7 @@ Build-Depends:
  pkg-config,
  protobuf-c-compiler,
  protobuf-compiler,
- python3-all,
- xmlto
+ python3-all
 Standards-Version: 4.1.5
 Homepage: https://www.criu.org/
 Vcs-Browser: https://salsa.debian.org/debian/criu
