@@ -1,3 +1,11 @@
+criu (3.16.1-1) stable; urgency=low
+
+  * New upstream version 3.16.1
+  * Drop patch for unversioned python
+  * Replace asciidoc/xmlto dependency with asciidoctor
+
+ -- Radostin Stoyanov <radostin@redhat.com>  Tue, 26 Oct 2021 11:26:30 +0100
+
 criu (3.16-2) bullseye; urgency=medium
 
   * Fix unversioned python
