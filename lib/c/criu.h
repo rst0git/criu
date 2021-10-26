@@ -28,6 +28,13 @@
 extern "C" {
 #endif
 
+#define CRIU_LOG_UNSET (-1)
+#define CRIU_LOG_MSG   (0) /* Print message regardless of log level */
+#define CRIU_LOG_ERROR (1) /* Errors only */
+#define CRIU_LOG_WARN  (2) /* Warnings */
+#define CRIU_LOG_INFO  (3) /* Informative */
+#define CRIU_LOG_DEBUG (4) /* Debug only */
+
 enum criu_service_comm { CRIU_COMM_SK, CRIU_COMM_FD, CRIU_COMM_BIN };
 
 enum criu_cg_mode {
@@ -103,6 +110,7 @@ int criu_set_page_server_address_port(const char *address, int port);
 int criu_set_pre_dump_mode(enum criu_pre_dump_mode mode);
 void criu_set_pidfd_store_sk(int sk);
 int criu_set_network_lock(enum criu_network_lock_method method);
+int criu_join_ns_add(const char *ns, const char *ns_file, const char *extra_opt);
 
 /*
  * The criu_notify_arg_t na argument is an opaque
@@ -263,6 +271,7 @@ int criu_local_set_page_server_address_port(criu_opts *opts, const char *address
 int criu_local_set_pre_dump_mode(criu_opts *opts, enum criu_pre_dump_mode mode);
 void criu_local_set_pidfd_store_sk(criu_opts *opts, int sk);
 int criu_local_set_network_lock(criu_opts *opts, enum criu_network_lock_method method);
+int criu_local_join_ns_add(criu_opts *opts, const char *ns, const char *ns_file, const char *extra_opt);
 
 void criu_local_set_notify_cb(criu_opts *opts, int (*cb)(char *action, criu_notify_arg_t na));
 
