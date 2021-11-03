@@ -1,3 +1,9 @@
+criu (3.16.1-1ppa2.18.04) bionic; urgency=medium
+
+  * New upstream version 3.16.1
+
+ -- Radostin Stoyanov <radostin@redhat.com>  Wed, 3 Nov 2021 14:26:30 +0100
+
 criu (3.16.1-1ppa2.20.04) focal; urgency=medium
 
   * New upstream version 3.16.1
