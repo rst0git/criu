@@ -45,6 +45,7 @@
 #include "proc_parse.h"
 #include "parasite.h"
 #include "parasite-syscall.h"
+#include "compel/ptrace.h"
 #include "files.h"
 #include "files-reg.h"
 #include "shmem.h"
@@ -183,6 +184,25 @@ static int dump_sched_info(int pid, ThreadCoreEntry *tc)
 	pr_info("\tdumping %d nice for %d\n", ret, pid);
 	tc->has_sched_nice = true;
 	tc->sched_nice = ret;
+
+	return 0;
+}
+
+static int check_thread_rseq(pid_t tid, const struct parasite_check_rseq *ti_rseq, bool has_tc_rseq_entry)
+{
+	if (!kdat.has_rseq || kdat.has_ptrace_get_rseq_conf)
+		return 0;
+
+	pr_debug("%d has rseq_inited = %d\n", tid, ti_rseq->rseq_inited);
+
+	/*
+	 * We have no kdat.has_ptrace_get_rseq_conf and user
+	 * process has rseq() used, let's fail dump.
+	 */
+	if (ti_rseq->rseq_inited) {
+		pr_err("%d has rseq but kernel lacks get_rseq_conf feature\n", tid);
+		return -1;
+	}
 
 	return 0;
 }
@@ -717,6 +737,17 @@ int dump_thread_core(int pid, CoreEntry *core, const struct parasite_dump_thread
 	if (!ret)
 		ret = seccomp_dump_thread(pid, tc);
 
+	/*
+	 * We are dumping rseq() in the dump_thread_rseq() function,
+	 * *before* processes gets infected (because of ptrace requests
+	 * API restriction). At this point, if the kernel lacks
+	 * kdat.has_ptrace_get_rseq_conf support we have to ensure
+	 * that dumpable processes haven't initialized rseq() or
+	 * fail dump if rseq() was used.
+	 */
+	if (!ret)
+		ret = check_thread_rseq(pid, &ti->rseq, !!tc->rseq_entry);
+
 	return ret;
 }
 
@@ -998,6 +1029,68 @@ static int dump_task_signals(pid_t pid, struct pstree_item *item)
 	if (ret) {
 		pr_err("Can't dump shared signals (pid: %d)\n", pid);
 		return -1;
+	}
+
+	return 0;
+}
+
+static int dump_thread_rseq(pid_t tid, RseqEntry **rseqep)
+{
+	struct __ptrace_rseq_configuration rseq;
+	RseqEntry *rseqe = NULL;
+	int ret;
+
+	/*
+	 * If we are here it means that rseq() syscall is supported,
+	 * but ptrace(PTRACE_GET_RSEQ_CONFIGURATION) isn't supported,
+	 * we can just fail dump here. But this is bad idea, IMHO.
+	 *
+	 * So, we will try to detect if victim process was used rseq().
+	 * See check_rseq() and check_thread_rseq() functions.
+	 */
+	if (!kdat.has_ptrace_get_rseq_conf)
+		return 0;
+
+	ret = ptrace(PTRACE_GET_RSEQ_CONFIGURATION, tid, sizeof(rseq), &rseq);
+	if (ret != sizeof(rseq)) {
+		pr_perror("ptrace(PTRACE_GET_RSEQ_CONFIGURATION, %d) = %d", tid, ret);
+		return -1;
+	}
+
+	if (rseq.flags != 0) {
+		pr_err("something wrong with ptrace(PTRACE_GET_RSEQ_CONFIGURATION, %d) flags = 0x%x\n", tid,
+		       rseq.flags);
+		return -1;
+	}
+
+	pr_err("Dump rseq of %d: ptr = 0x%lx sign = 0x%x\n", tid, (unsigned long)rseq.rseq_abi_pointer, rseq.signature);
+
+	rseqe = xmalloc(sizeof(*rseqe));
+	if (!rseqe)
+		return -1;
+
+	rseq_entry__init(rseqe);
+
+	rseqe->rseq_abi_pointer = rseq.rseq_abi_pointer;
+	rseqe->rseq_abi_size = rseq.rseq_abi_size;
+	rseqe->signature = rseq.signature;
+
+	*rseqep = rseqe;
+
+	return 0;
+}
+
+static int dump_task_rseq(pid_t pid, struct pstree_item *item)
+{
+	int i;
+
+	/* if rseq() syscall isn't supported then nothing to dump */
+	if (!kdat.has_rseq)
+		return 0;
+
+	for (i = 0; i < item->nr_threads; i++) {
+		if (dump_thread_rseq(item->threads[i].real, &item->core[i]->thread_core->rseq_entry))
+			return -1;
 	}
 
 	return 0;
@@ -1295,6 +1388,12 @@ static int dump_one_task(struct pstree_item *item, InventoryEntry *parent_ie)
 	ret = dump_task_signals(pid, item);
 	if (ret) {
 		pr_err("Dump %d signals failed %d\n", pid, ret);
+		goto err;
+	}
+
+	ret = dump_task_rseq(pid, item);
+	if (ret) {
+		pr_err("Dump %d rseq failed %d\n", pid, ret);
 		goto err;
 	}
 
