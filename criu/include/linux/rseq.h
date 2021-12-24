@@ -2,6 +2,14 @@
 #ifndef _UAPI_LINUX_RSEQ_H
 #define _UAPI_LINUX_RSEQ_H
 
+#ifdef __has_include
+#if __has_include ("sys/rseq.h")
+#include <sys/rseq.h>
+#include "asm/thread_pointer.h"
+#endif
+#endif
+
+#ifndef __GLIBC_HAVE_KERNEL_RSEQ
 /*
  * linux/rseq.h
  *
@@ -140,5 +148,6 @@ struct rseq {
 	 */
 	__u32 flags;
 } __attribute__((aligned(4 * sizeof(__u64))));
+#endif /* __GLIBC_HAVE_KERNEL_RSEQ */
 
 #endif /* _UAPI_LINUX_RSEQ_H */
