@@ -19,13 +19,48 @@
 
 #include "zdtmtst.h"
 
+#ifdef __has_include
+#if __has_include("sys/rseq.h")
+#include <sys/rseq.h>
+#endif
+#endif
+
 #if defined(__x86_64__)
+
+#if defined(RSEQ_SIG)
+static inline void *__criu_thread_pointer(void)
+{
+#if __GNUC_PREREQ(11, 1)
+	return __builtin_thread_pointer();
+#else
+	void *__result;
+#ifdef __x86_64__
+	__asm__("mov %%fs:0, %0" : "=r"(__result));
+#else
+	__asm__("mov %%gs:0, %0" : "=r"(__result));
+#endif
+	return __result;
+#endif /* !GCC 11 */
+}
+
+static inline void unregister_glibc_rseq(void)
+{
+	/* unregister rseq */
+	syscall(__NR_rseq, (void *)((char *)__criu_thread_pointer() + __rseq_offset), __rseq_size, 1, RSEQ_SIG);
+}
+#else
+static inline void unregister_glibc_rseq(void)
+{
+}
+#endif
 
 const char *test_doc = "Check that rseq() basic C/R works";
 const char *test_author = "Alexander Mikhalitsyn <alexander.mikhalitsyn@virtuozzo.com>";
 /* parts of code borrowed from https://www.efficios.com/blog/2019/02/08/linux-restartable-sequences/ */
 
 /* some useful definitions from kernel uapi */
+#ifndef RSEQ_SIG
+
 enum rseq_flags {
 	RSEQ_FLAG_UNREGISTER = (1 << 0),
 };
@@ -37,14 +72,17 @@ struct rseq {
 	uint32_t flags;
 } __attribute__((aligned(4 * sizeof(uint64_t))));
 
+#define RSEQ_SIG 0x53053053
+
+#endif
+
 #ifndef __NR_rseq
 #define __NR_rseq 334
 #endif
 /* EOF */
 
+static volatile struct rseq *rseq_ptr;
 static __thread volatile struct rseq __rseq_abi;
-
-#define RSEQ_SIG 0x53053053
 
 static int sys_rseq(volatile struct rseq *rseq_abi, uint32_t rseq_len, int flags, uint32_t sig)
 {
@@ -54,19 +92,10 @@ static int sys_rseq(volatile struct rseq *rseq_abi, uint32_t rseq_len, int flags
 static void register_thread(void)
 {
 	int rc;
-	rc = sys_rseq(&__rseq_abi, sizeof(struct rseq), 0, RSEQ_SIG);
+	unregister_glibc_rseq();
+	rc = sys_rseq(rseq_ptr, sizeof(struct rseq), 0, RSEQ_SIG);
 	if (rc) {
 		fail("Failed to register rseq");
-		exit(1);
-	}
-}
-
-static void unregister_thread(void)
-{
-	int rc;
-	rc = sys_rseq(&__rseq_abi, sizeof(struct rseq), RSEQ_FLAG_UNREGISTER, RSEQ_SIG);
-	if (rc) {
-		fail("Failed to unregister rseq");
 		exit(1);
 	}
 }
@@ -74,7 +103,7 @@ static void unregister_thread(void)
 static void check_thread(void)
 {
 	int rc;
-	rc = sys_rseq(&__rseq_abi, sizeof(struct rseq), 0, RSEQ_SIG);
+	rc = sys_rseq(rseq_ptr, sizeof(struct rseq), 0, RSEQ_SIG);
 	if (!(rc && errno == EBUSY)) {
 		fail("Failed to check rseq %d", rc);
 		exit(1);
@@ -113,8 +142,8 @@ static int rseq_addv(intptr_t *v, intptr_t count, int cpu)
 		".popsection\n\t"
 		: /* gcc asm goto does not allow outputs */
 		: [cpu_id]            "r" (cpu),
-		[current_cpu_id]      "m" (__rseq_abi.cpu_id),
-		[rseq_cs]             "m" (__rseq_abi.rseq_cs),
+		[current_cpu_id]      "m" (rseq_ptr->cpu_id),
+		[rseq_cs]             "m" (rseq_ptr->rseq_cs),
 		/* final store input */
 		[v]                   "m" (*v),
 		[count]               "er" (count)
@@ -135,6 +164,9 @@ int main(int argc, char *argv[])
 	intptr_t *cpu_data;
 	long nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
+	rseq_ptr = &__rseq_abi;
+	memset((void *)rseq_ptr, 0, sizeof(struct rseq));
+
 	test_init(argc, argv);
 
 	cpu_data = calloc(nr_cpus, sizeof(*cpu_data));
@@ -150,7 +182,7 @@ int main(int argc, char *argv[])
 
 	check_thread();
 
-	cpu = RSEQ_ACCESS_ONCE(__rseq_abi.cpu_id_start);
+	cpu = RSEQ_ACCESS_ONCE(rseq_ptr->cpu_id_start);
 	ret = rseq_addv(&cpu_data[cpu], 2, cpu);
 	if (ret)
 		fail("Failed to increment per-cpu counter");
