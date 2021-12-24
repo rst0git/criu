@@ -1424,6 +1424,10 @@ static inline int fork_with_pid(struct pstree_item *item)
 		}
 	}
 
+	/* disable rseq to prevent it's inheritance */
+	if (item == root_item)
+		unregister_glibc_rseq();
+
 	if (kdat.has_clone3_set_tid) {
 		ret = clone3_with_pid_noasan(restore_task_with_children, &ca,
 					     (ca.clone_flags & ~(CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWTIME)),

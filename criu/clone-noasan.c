@@ -9,6 +9,8 @@
 #include "log.h"
 #include "common/bug.h"
 
+#include "clone-noasan.h"
+
 /*
  * ASan doesn't play nicely with clone if we use current stack for
  * child task. ASan puts local variables on the fake stack
@@ -34,16 +36,33 @@
  *	... wait for process to finish ...
  *	unlock_last_pid
  */
+
+struct call_fn_args {
+	int (*fn)(void *);
+	void *arg;
+};
+
+int call_fn(void *arg)
+{
+	struct call_fn_args *cargs = arg;
+	unregister_glibc_rseq();
+	return cargs->fn(cargs->arg);
+}
+
 int clone_noasan(int (*fn)(void *), int flags, void *arg)
 {
 	void *stack_ptr = (void *)round_down((unsigned long)&stack_ptr - 1024, 16);
+	struct call_fn_args fn_args = {
+		.fn = fn,
+		.arg = arg,
+	};
 
 	BUG_ON((flags & CLONE_VM) && !(flags & CLONE_VFORK));
 	/*
 	 * Reserve some bytes for clone() internal needs
 	 * and use as stack the address above this area.
 	 */
-	return clone(fn, stack_ptr, flags, arg);
+	return clone(call_fn, stack_ptr, flags, (void *)&fn_args);
 }
 
 int clone3_with_pid_noasan(int (*fn)(void *), void *arg, int flags, int exit_signal, pid_t pid)
