@@ -4,7 +4,11 @@ all: test-c rpc_pb2.py criu
 CFLAGS += -g -Werror -Wall -I.
 LDLIBS +=  -lprotobuf-c
 
-PYTHON ?= python
+if [ $(which python3) ]; then
+	PYTHON=python3
+elif [ $(which python2) ]; then
+	PYTHON=python2
+else
 
 run: all
 	@make -C .. loop
