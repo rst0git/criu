@@ -23,6 +23,7 @@
 #include "common/compiler.h"
 
 #include "linux/mount.h"
+#include "linux/rseq.h"
 
 #include "clone-noasan.h"
 #include "cr_options.h"
@@ -809,6 +810,18 @@ static int open_cores(int pid, CoreEntry *leader_core)
 			rsti(current)->has_seccomp = true;
 			break;
 		}
+	}
+
+	for (i = 0; i < current->nr_threads; i++) {
+		ThreadCoreEntry *tc = cores[i]->thread_core;
+		struct rst_rseq *rseqs = rsti(current)->rseqe;
+
+		/* compatibility with older CRIU versions */
+		if (!tc->rseq_entry)
+			continue;
+
+		rseqs[i].rseq_abi_pointer = tc->rseq_entry->rseq_abi_pointer;
+		rseqs[i].rseq_cs_pointer = tc->rseq_entry->rseq_cs_pointer;
 	}
 
 	return 0;
@@ -1966,6 +1979,48 @@ static int attach_to_tasks(bool root_seized)
 	return 0;
 }
 
+static int restore_rseq_cs(void)
+{
+	struct pstree_item *item;
+
+	for_each_pstree_item(item) {
+		int i;
+
+		if (!task_alive(item))
+			continue;
+
+		if (item->nr_threads == 1) {
+			item->threads[0].real = item->pid->real;
+		} else {
+			if (parse_threads(item->pid->real, &item->threads, &item->nr_threads)) {
+				pr_err("restore_rseq_cs: parse_threads failed\n");
+				return -1;
+			}
+		}
+
+		for (i = 0; i < item->nr_threads; i++) {
+			pid_t pid = item->threads[i].real;
+			struct rst_rseq *rseqe = rsti(item)->rseqe;
+
+			if (!rseqe)
+				return -1;
+
+			if (!rseqe[i].rseq_cs_pointer || !rseqe[i].rseq_abi_pointer)
+				continue;
+
+			if (ptrace_poke_area(
+				    pid, &rseqe[i].rseq_cs_pointer,
+				    decode_pointer(rseqe[i].rseq_abi_pointer + offsetof(struct criu_rseq, rseq_cs)),
+				    sizeof(uint64_t))) {
+				pr_err("Can't restore rseq_cs pointer (pid: %d)\n", pid);
+				return -1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 static int catch_tasks(bool root_seized, enum trace_flags *flag)
 {
 	struct pstree_item *item;
@@ -2399,6 +2454,9 @@ skip_ns_bouncing:
 
 	if (restore_freezer_state())
 		pr_err("Unable to restore freezer state\n");
+
+	/* just before releasing threads we have to restore rseq_cs */
+	restore_rseq_cs();
 
 	/* Detaches from processes and they continue run through sigreturn. */
 	if (finalize_restore_detach())
