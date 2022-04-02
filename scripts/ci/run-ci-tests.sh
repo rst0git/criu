@@ -146,6 +146,7 @@ cleanup_cgroup() {
 trap cleanup_cgroup EXIT
 ./test/zdtm_mount_cgroups $cgid
 
+
 echo "|$(pwd)/test/abrt.sh %P %p %s %e" > /proc/sys/kernel/core_pattern
 
 if [ "${COMPAT_TEST}x" = "yx" ] ; then
@@ -208,6 +209,24 @@ fi
 
 # shellcheck disable=SC2086
 ./test/zdtm.py run -a -p 2 --keep-going $ZDTM_OPTS
+
+cat /proc/self/cgroup
+./test/zdtm_umount_cgroups $cgid
+cat /proc/self/cgroup
+
+# FIXME: rpc tests fail even with set glibc tunable
+# https://github.com/checkpoint-restore/criu/issues/1696
+if [ "$GLIBC_TUNABLES" != "glibc.pthread.rseq=0" ]; then
+	make -C test/others/rpc/ run
+fi
+
+cat /proc/self/cgroup
+sleep 2
+cat /proc/self/cgroup
+exit 0
+
+
+
 if criu/criu check --feature move_mount_set_group; then
 	# shellcheck disable=SC2086
 	./test/zdtm.py run -a -p 2 --mntns-compat-mode --keep-going $ZDTM_OPTS

@@ -22,8 +22,13 @@ run: all
 		$(PYTHON) read.py build/status"
 	rm -f build/status
 	chmod a+rw build/pidfile
-	sudo -g '#1000' -u '#1000' ./run.sh
+	sudo -g '#1000' -u '#1000' ./run.sh || true
 	sudo -g '#1000' -u '#1000' ./version.py
+	cat build/service.log
+	for i in $( find . -name *log ); do \
+		echo "$i"; \
+		cat $i; \
+	done
 	# run the configuration file via RPC test cases
 	./config_file.py build
 

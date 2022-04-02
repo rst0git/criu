@@ -70,6 +70,8 @@ int main(int argc, char *argv[])
 	 * put images
 	 */
 
+	printf("1\n");
+
 	puts(argv[2]);
 	dir_fd = open(argv[2], O_DIRECTORY);
 	if (dir_fd == -1) {
@@ -77,6 +79,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
+	printf("2\n");
 	/*
 	 * Set "DUMP" type of request.
 	 * Allocate CriuDumpReq.
@@ -88,7 +91,9 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
+	printf("3\n");
 	criu_opts__init(req.opts);
+	printf("4\n");
 
 	/*
 	 * Set dump options.
@@ -100,6 +105,11 @@ int main(int argc, char *argv[])
 	req.opts->has_log_level = true;
 	req.opts->log_level = 4;
 
+	printf("req.opts->has_manage_cgroups %d\n", req.opts->has_manage_cgroups);
+	printf("req.opts->manage_cgroups %d\n", req.opts->manage_cgroups);
+	printf("req.opts->has_manage_cgroups_mode %d\n", req.opts->has_manage_cgroups_mode);
+	printf("req.opts->manage_cgroups_mode %d\n", req.opts->manage_cgroups_mode);
+
 	/*
 	 * Connect to service socket
 	 */
@@ -108,6 +118,7 @@ int main(int argc, char *argv[])
 		perror("Can't create socket");
 		return -1;
 	}
+	printf("5\n");
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_LOCAL;
@@ -116,6 +127,7 @@ int main(int argc, char *argv[])
 
 	addr_len = strlen(addr.sun_path) + sizeof(addr.sun_family);
 
+	printf("6\n");
 	ret = connect(fd, (struct sockaddr *)&addr, addr_len);
 	if (ret == -1) {
 		perror("Cant connect to socket");
@@ -125,6 +137,7 @@ int main(int argc, char *argv[])
 	/*
 	 * Send request
 	 */
+	printf("7\n");
 	ret = send_req(fd, &req);
 	if (ret == -1) {
 		perror("Can't send request");
@@ -134,6 +147,7 @@ int main(int argc, char *argv[])
 	/*
 	 * Recv response
 	 */
+	printf("8\n");
 	resp = recv_resp(fd);
 	if (!resp) {
 		perror("Can't recv response");
@@ -147,9 +161,13 @@ int main(int argc, char *argv[])
 		goto exit;
 	}
 
+	printf("9\n");
 	/*
 	 * Check response.
 	 */
+	printf("resp->success %d\n", resp->success);
+	printf("resp->type %d\n", resp->type);
+	printf("resp->cr_errmsg %s\n", resp->cr_errmsg);
 	if (resp->success)
 		puts("Success");
 	else {

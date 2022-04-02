@@ -27,6 +27,10 @@ function stop_server {
 	title_print "Shutdown service server"
 	kill -SIGTERM $(cat build/pidfile)
 	unlink build/pidfile
+	for i in build/output*; do
+		echo -e "\t\t" $i
+		cat $i
+	done
 }
 
 function test_c {
