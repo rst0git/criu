@@ -1105,10 +1105,9 @@ int check_options(void)
 	}
 #endif
 
-	if (opts.mntns_compat_mode && opts.mode != CR_RESTORE) {
-		pr_err("Option --mntns-compat-mode is only valid on restore\n");
-		return 1;
-	} else if (!opts.mntns_compat_mode && opts.mode == CR_RESTORE) {
+	// FIXME: Always use mntns-compat-mode until we have a proper fix for
+	// https://github.com/opencontainers/runc/pull/3442
+	if (opts.mode == CR_RESTORE) {
 		if (check_mount_v2()) {
 			pr_debug("Mount engine fallback to --mntns-compat-mode mode\n");
 			opts.mntns_compat_mode = true;
