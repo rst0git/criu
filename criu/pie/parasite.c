@@ -3,7 +3,7 @@
 #include <signal.h>
 #include <linux/limits.h>
 #include <linux/capability.h>
-#include <sys/mount.h>
+#include <linux/mount.h>
 #include <stdarg.h>
 #include <sys/ioctl.h>
 #include <sys/uio.h>
