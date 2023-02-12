@@ -944,7 +944,7 @@ static int dump_one_nf(struct nlmsghdr *hdr, struct ns_id *ns, void *arg)
 	if (lazy_image(img) && open_image_lazy(img))
 		return -1;
 
-	if (write_img_buf(img, hdr, hdr->nlmsg_len))
+	if (write_img_buf(img, hdr, hdr->nlmsg_len, true))
 		return -1;
 
 	return 0;

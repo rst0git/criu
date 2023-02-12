@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <sys/stat.h>
+
 #include "crtools.h"
 #include "cr_options.h"
 #include "imgset.h"
@@ -19,6 +20,7 @@
 #include "proc_parse.h"
 #include "img-streamer.h"
 #include "namespaces.h"
+#include "tls.h"
 
 bool ns_per_id = false;
 bool img_common_magic = true;
@@ -414,11 +416,11 @@ static int img_write_magic(struct cr_img *img, int oflags, int type)
 		u32 cmagic;
 
 		cmagic = head_magic(oflags);
-		if (write_img(img, &cmagic))
+		if (write_img(img, &cmagic, false))
 			return -1;
 	}
 
-	return write_img(img, &imgset_template[type].magic);
+	return write_img(img, &imgset_template[type].magic, false);
 }
 
 struct openat_args {
@@ -674,19 +676,57 @@ struct cr_img *open_pages_image(unsigned long flags, struct cr_img *pmi, u32 *id
  *	0  on success
  *	-1 on error (error message is printed)
  */
-int write_img_buf(struct cr_img *img, const void *ptr, int size)
+int write_img_buf(struct cr_img *img, const void *ptr, int size, bool encrypt_data)
 {
 	int ret;
+	void *buf;
+	uint8_t nonce_data[12]; // 96-bits nonce for ChaCha20-Poly1305
+	uint8_t tag_data[16];	// 128-bits tag for ChaCha20-Poly1305
 
-	ret = bwrite(&img->_x, ptr, size);
-	if (ret == size)
-		return 0;
+	if (!encrypt_data || !opts.tls || size <= 0) {
+		buf = (void *)ptr;
+	} else {
+		buf = xmalloc(size);
+		if (!buf)
+			return -1;
 
-	if (ret < 0)
-		pr_perror("Can't write img file");
-	else
-		pr_err("Img trimmed %d/%d\n", ret, size);
-	return -1;
+		if (memcpy(buf, ptr, size) == NULL) {
+			pr_perror("Failed to copy buffer data");
+			return -1;
+		}
+
+		/* Encrypt buffer data using ChaCha20-Poly1305 */
+		ret = tls_encrypt_data(buf, size, tag_data, nonce_data);
+		if (ret < 0) {
+			pr_err("Failed to encrypt buffer data\n");
+			return -1;
+		}
+	}
+
+	ret = bwrite(&img->_x, buf, size);
+	if (ret != size) {
+		if (ret < 0)
+			pr_perror("Can't write img file");
+		else
+			pr_err("Img trimmed %d/%d\n", ret, size);
+		return -1;
+	}
+
+	if (encrypt_data && opts.tls && size > 0) {
+		ret = bwrite(&img->_x, tag_data, sizeof(tag_data));
+		if (ret != sizeof(tag_data)) {
+			pr_err("Failed to write tag data to image file\n");
+			return -1;
+		}
+
+		ret = bwrite(&img->_x, nonce_data, sizeof(nonce_data));
+		if (ret != sizeof(nonce_data)) {
+			pr_err("Failed to write nonce data to image file\n");
+			return -1;
+		}
+	}
+
+	return 0;
 }
 
 /*
