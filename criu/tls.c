@@ -4,7 +4,13 @@
 #include <linux/limits.h>
 
 #include <gnutls/gnutls.h>
+#include <gnutls/x509.h>
+#include <gnutls/crypto.h>
+#include <gnutls/abstract.h>
 
+#include "imgset.h"
+#include "images/cipher.pb-c.h"
+#include "protobuf.h"
 #include "cr_options.h"
 #include "xmalloc.h"
 
@@ -28,8 +34,13 @@
 
 static gnutls_session_t session;
 static gnutls_certificate_credentials_t x509_cred;
+static gnutls_pubkey_t pubkey;
 static int tls_sk = -1;
 static int tls_sk_flags = 0;
+
+/* 256-bits key for ChaCha20-Poly1305 */
+static uint8_t token[32];
+static const int algo = GNUTLS_CIPHER_CHACHA20_POLY1305;
 
 void tls_terminate_session(bool async)
 {
@@ -401,4 +412,183 @@ int tls_x509_init(int sockfd, bool is_server)
 err:
 	tls_terminate_session(true);
 	return -1;
+}
+
+static inline int _tls_generate_token(void)
+{
+	return gnutls_rnd(GNUTLS_RND_KEY, &token, sizeof(token));
+}
+
+/**
+ * tls_x509_load_public_key initializes GnuTLS and loads a public key
+ * key that can be used for encryption during dump and pre-dump.
+ */
+int tls_x509_load_public_key(void)
+{
+	int ret;
+	char *cert_file_path = CRIU_CERT;
+	gnutls_x509_crt_t crt;
+	gnutls_datum_t cert_data;
+
+	if (!opts.tls)
+		return 0;
+
+	if (opts.tls_cert)
+		cert_file_path = opts.tls_cert;
+
+	pr_debug("Loading public key from %s\n", cert_file_path);
+	ret = gnutls_load_file(cert_file_path, &cert_data);
+	if (ret < 0) {
+		tls_perror("Failed to load certificate file", ret);
+		return -1;
+	}
+
+	ret = gnutls_pubkey_init(&pubkey);
+	if (ret < 0) {
+		tls_perror("Failed to initialize public key", ret);
+		return -1;
+	}
+
+	ret = gnutls_x509_crt_init(&crt);
+	if (ret < 0) {
+		tls_perror("Failed to initialize X.509 certificate structure", ret);
+		return -1;
+	}
+
+	ret = gnutls_x509_crt_import(crt, &cert_data, GNUTLS_X509_FMT_PEM);
+	if (ret < 0) {
+		tls_perror("Failed to import certificate", ret);
+		return -1;
+	}
+
+	ret = gnutls_pubkey_import_x509(pubkey, crt, 0);
+	if (ret < 0) {
+		tls_perror("Failed to load public key", ret);
+		return -1;
+	}
+
+	ret = _tls_generate_token();
+	if (ret < 0) {
+		tls_perror("Failed to generate token", ret);
+		return -1;
+	}
+
+	gnutls_free(cert_data.data);
+	gnutls_x509_crt_deinit(crt);
+
+	return 0;
+}
+
+/**
+ * tls_encrypt_data encrypts given data with public key from X.509 certificate.
+ * On success, the size of the encrypted data is returned and @ciphertext_data
+ * is set to point to the encrypted data. -1 is returned on error.
+ */
+int tls_encrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *nonce_data)
+{
+	int ret;
+	giovec_t iov[1];
+	gnutls_datum_t key;
+	unsigned int cipher_iv_size;
+	static gnutls_aead_cipher_hd_t handle = NULL;
+	size_t tag_size = gnutls_cipher_get_tag_size(algo);
+
+	if (!opts.tls)
+		return -1;
+
+	if (handle == NULL) {
+		key.data = token;
+		key.size = gnutls_cipher_get_key_size(algo);
+
+		ret = gnutls_aead_cipher_init(&handle, algo, &key);
+		if (ret < 0) {
+			tls_perror("Failed to initialize cipher", ret);
+			return -1;
+		}
+	}
+
+	/* A different 96-bit nonce must be used for each invocation.
+	 * The nonce should never be reused with the same key.
+	 * (RFC 8439, Section 2.8 "AEAD Construction")
+	 */
+	cipher_iv_size = gnutls_cipher_get_iv_size(algo);
+	ret = gnutls_rnd(GNUTLS_RND_NONCE, nonce_data, cipher_iv_size);
+	if (ret < 0) {
+		tls_perror("Failed to generate random nonce", ret);
+		return -1;
+	}
+
+	iov[0].iov_base = data;
+	iov[0].iov_len = data_size;
+
+	ret = gnutls_aead_cipher_encryptv2(handle, nonce_data, cipher_iv_size, NULL, 0, iov, 1, tag_data, &tag_size);
+	if (ret < 0) {
+		tls_perror("Failed to encrypt data", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+int write_img_cipher(void)
+{
+	int ret;
+	struct cr_img *img;
+	CipherEntry ce = CIPHER_ENTRY__INIT;
+	unsigned max_block_size;
+	unsigned key_len = 0;
+	gnutls_datum_t plaintext = { .data = token, .size = sizeof(token) };
+	gnutls_datum_t ciphertext;
+
+	if (!opts.tls) {
+		return 0;
+	}
+
+	if (!pubkey) {
+		pr_err("Public key is not initialized\n");
+		return -1;
+	}
+
+	ret = gnutls_pubkey_get_pk_algorithm(pubkey, &key_len);
+	if (ret < 0) {
+		pr_err("Failed to read public key length");
+		return -1;
+	}
+	if (ret != GNUTLS_PK_RSA) {
+		pr_err("Public key must be RSA");
+		return -1;
+	}
+
+	/* The data must be small enough to use plain RSA
+	 * https://github.com/gnutls/nettle/blob/fe7ae87d/pkcs1-encrypt.c#L66
+	 */
+	max_block_size = key_len / 8 - 11;
+	if (plaintext.size > max_block_size) {
+		pr_err("Data size must be less than %u bytes\n", max_block_size);
+		return -1;
+	}
+
+	ret = gnutls_pubkey_encrypt_data(pubkey, 0, &plaintext, &ciphertext);
+	if (ret < 0) {
+		tls_perror("Failed to encrypt data", ret);
+		return -1;
+	}
+
+	pr_debug("Writing cipher image\n");
+	img = open_image(CR_FD_CIPHER, O_DUMP);
+	if (!img)
+		return -1;
+
+	ce.token.len = ciphertext.size;
+	ce.token.data = ciphertext.data;
+	ret = pb_write_one(img, &ce, PB_CIPHER);
+	if (ret < 0) {
+		pr_err("Failed to write ciphertext size to image\n");
+		goto err;
+	}
+
+err:
+	gnutls_free(ciphertext.data);
+	close_image(img);
+	return ret;
 }

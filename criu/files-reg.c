@@ -375,8 +375,9 @@ static int mkreg_ghost(char *path, GhostFileEntry *gfe, struct cr_img *img)
 		}
 
 		ret = copy_file_from_chunks(img, gfd, gfe->size);
-	} else
+	} else {
 		ret = copy_file(img_raw_fd(img), gfd, 0);
+	}
 	if (ret < 0)
 		unlink(path);
 	close(gfd);

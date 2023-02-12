@@ -79,6 +79,7 @@
 #include "timens.h"
 #include "bpfmap.h"
 #include "apparmor.h"
+#include "tls.h"
 
 #include "parasite-syscall.h"
 #include "files-reg.h"

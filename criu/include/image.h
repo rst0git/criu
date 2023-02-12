@@ -164,8 +164,8 @@ extern void up_page_ids_base(void);
 
 extern struct cr_img *img_from_fd(int fd); /* for cr-show mostly */
 
-extern int write_img_buf(struct cr_img *, const void *ptr, int size);
-#define write_img(img, ptr) write_img_buf((img), (ptr), sizeof(*(ptr)))
+extern int write_img_buf(struct cr_img *, const void *ptr, int size, bool encrypt_data);
+#define write_img(img, ptr, encrypt_data) write_img_buf((img), (ptr), sizeof(*(ptr)), encrypt_data)
 extern int read_img_buf_eof(struct cr_img *, void *ptr, int size);
 #define read_img_eof(img, ptr) read_img_buf_eof((img), (ptr), sizeof(*(ptr)))
 extern int read_img_buf(struct cr_img *, void *ptr, int size);

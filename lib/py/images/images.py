@@ -386,6 +386,20 @@ class bpfmap_data_extra_handler:
         return pload.bytes
 
 
+class cipher_data_extra_handler:
+    def load(self, f, pload):
+        data = f.read(pload.token_size)
+        return base64.encodebytes(data).decode('utf-8')
+
+    def dump(self, extra, f, pload):
+        data = base64.decodebytes(extra)
+        f.write(data)
+
+    def skip(self, f, pload):
+        f.seek(pload.bytes, os.SEEK_CUR)
+        return pload.bytes
+
+
 class ipc_sem_set_handler:
     def load(self, f, pbuff):
         entry = pb2dict.pb2dict(pbuff)
@@ -562,6 +576,7 @@ handlers = {
     'BPFMAP_DATA': entry_handler(pb.bpfmap_data_entry,
                                  bpfmap_data_extra_handler()),
     'APPARMOR': entry_handler(pb.apparmor_entry),
+    'CIPHER': entry_handler(pb.cipher_entry, cipher_data_extra_handler()),
 }
 
 
