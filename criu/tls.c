@@ -1,3 +1,4 @@
+#include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -480,6 +481,97 @@ int tls_x509_load_public_key(void)
 }
 
 /**
+ * tls_load_token loads a private key and decrypts the
+ * token  from the cipher.img that is then used to
+ * decrypt all other images.
+ */
+int tls_load_token(void)
+{
+	int ret;
+	char *privkey_file_path = CRIU_KEY;
+	struct cr_img *img;
+	CipherEntry *ce;
+
+	gnutls_datum_t key_data;
+	gnutls_privkey_t privkey;
+	gnutls_x509_privkey_t x509_key;
+	gnutls_datum_t ciphertext;
+	gnutls_datum_t decrypted_token;
+
+	if (!opts.tls)
+		return 0;
+
+	if (opts.tls_key)
+		privkey_file_path = opts.tls_key;
+
+	pr_debug("Loading private key from %s\n", privkey_file_path);
+	ret = gnutls_load_file(privkey_file_path, &key_data);
+	if (ret < 0) {
+		tls_perror("Failed to load private key file", ret);
+		return -1;
+	}
+
+	ret = gnutls_x509_privkey_init(&x509_key);
+	if (ret < 0) {
+		tls_perror("Failed to initialize X.509 private key", ret);
+		return -1;
+	}
+
+	ret = gnutls_x509_privkey_import(x509_key, &key_data, GNUTLS_X509_FMT_PEM);
+	if (ret < 0) {
+		tls_perror("Failed to load X.509 private key", ret);
+		return -1;
+	}
+
+	ret = gnutls_privkey_init(&privkey);
+	if (ret < 0) {
+		tls_perror("Failed to initialize private key", ret);
+		return -1;
+	}
+
+	ret = gnutls_privkey_import_x509(privkey, x509_key, 0);
+	if (ret < 0) {
+		tls_perror("Failed to import private key", ret);
+		return -1;
+	}
+
+	img = open_image(CR_FD_CIPHER, O_RSTR);
+	if (!img)
+		return -1;
+
+	ret = pb_read_one(img, &ce, PB_CIPHER);
+	if (ret < 0) {
+		pr_err("Failed to read cipher entry\n");
+		goto out_close;
+	}
+
+	ciphertext.data = ce->token.data;
+	ciphertext.size = ce->token.len;
+
+	ret = gnutls_privkey_decrypt_data(privkey, 0, &ciphertext, &decrypted_token);
+	if (ret < 0) {
+		tls_perror("Failed to decrypt token data", ret);
+		goto out_close;
+	}
+
+	if (decrypted_token.size != sizeof(token)) {
+		pr_err("Invalid token size (%d != %lu)\n", decrypted_token.size, sizeof(token));
+		goto out_close;
+	}
+
+	if (memcpy(token, decrypted_token.data, sizeof(token)) != token) {
+		pr_perror("Failed to copy token data");
+		goto out_close;
+	}
+
+	ret = 0;
+out_close:
+	gnutls_free(key_data.data);
+	close_image(img);
+	return ret;
+}
+
+/**
  * tls_encrypt_data encrypts given data with public key from X.509 certificate.
  * On success, the size of the encrypted data is returned and @ciphertext_data
  * is set to point to the encrypted data. -1 is returned on error.
@@ -660,6 +752,108 @@ err:
 	xfree(buf);
 	total_size = data_size + num_chunks * sizeof(tag_data) + sizeof(nonce_data);
 	if (data_size && total_written != total_size) {
+		return -1;
+	}
+
+	return 0;
+}
+
+int tls_decrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *nonce_data)
+{
+	int ret;
+	giovec_t iov[1];
+	gnutls_datum_t key;
+	gnutls_aead_cipher_hd_t handle = NULL;
+	unsigned int cipher_iv_size = gnutls_cipher_get_iv_size(algo);
+	size_t tag_size = gnutls_cipher_get_tag_size(algo);
+
+	key.data = token;
+	key.size = gnutls_cipher_get_key_size(algo);
+
+	ret = gnutls_aead_cipher_init(&handle, algo, &key);
+	if (ret < 0) {
+		tls_perror("Failed to initialize cipher", ret);
+		return -1;
+	}
+
+	iov[0].iov_base = data;
+	iov[0].iov_len = data_size;
+
+	ret = gnutls_aead_cipher_decryptv2(handle, nonce_data, cipher_iv_size, NULL, 0, iov, 1, tag_data, tag_size);
+	if (ret < 0) {
+		exit(-1);
+	}
+
+	gnutls_aead_cipher_deinit(handle);
+
+	return ret;
+}
+
+int tls_decrypt_file(int fd_in, int fd_out, size_t data_size)
+{
+	void *buf;
+	uint8_t tag_data[16];	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t nonce_data[12]; // 96-bits nonce for ChaCha20-Poly1305
+	size_t chunk_size = 4096;
+	ssize_t total_written = 0;
+	ssize_t ret;
+
+	if (!opts.tls)
+		return 0;
+
+	if (data_size > 0 && data_size < chunk_size)
+		chunk_size = data_size;
+
+	buf = xmalloc(chunk_size);
+	if (!buf)
+		return -1;
+
+	/* FIXME: Could we use vmsplice instead of read/wite here? */
+	while (1) {
+		/* Read ciphertext data */
+		ret = read(fd_in, buf, chunk_size);
+		if (ret == 0) {
+			break;
+		}
+		if (ret != chunk_size) {
+			pr_perror("Failed to read ghost file data (%zd)", ret);
+			goto err;
+		}
+
+		/* Read tag data */
+		ret = read(fd_in, tag_data, sizeof(tag_data));
+		if (ret != sizeof(tag_data)) {
+			pr_err("Failed to read tag data to image file");
+			goto err;
+		}
+
+		/* Read nonce data */
+		ret = read(fd_in, nonce_data, sizeof(nonce_data));
+		if (ret != sizeof(nonce_data)) {
+			pr_err("Failed to read nonce data to image file");
+			goto err;
+		}
+
+		/* Decrypt buffer data using ChaCha20-Poly1305 */
+		if (tls_decrypt_data(buf, ret, tag_data, nonce_data) < 0) {
+			pr_err("Failed to decrypt buffer data\n");
+			return -1;
+		}
+
+		/* Write plaintext data */
+		ret = write(fd_out, buf, chunk_size);
+		if (ret != chunk_size) {
+			// FIXME: print ret value
+			pr_perror("Failed to write ghost file data");
+			goto err;
+		}
+
+		total_written += ret;
+	}
+
+err:
+	xfree(buf);
+	if (data_size && total_written != data_size) {
 		return -1;
 	}
 

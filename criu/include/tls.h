@@ -18,19 +18,24 @@ int write_img_cipher(void);
 int tls_x509_load_public_key(void);
 int tls_encrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *nonce_data);
 int tls_encrypt_file(int fd_in, int fd_out, size_t data_size);
+int tls_decrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *nonce_data);
+int tls_decrypt_file(int fd_in, int fd_out, size_t data_size);
+int tls_load_token(void);
 
 #else /* CONFIG_GNUTLS */
 
 #define tls_x509_init(sockfd, is_server) (0)
-#define tls_send(buf, len, flags)	 (-1)
-#define tls_recv(buf, len, flags)	 (-1)
-#define tls_send_data_from_fd(fd, len)	 (-1)
-#define tls_recv_data_to_fd(fd, len)	 (-1)
+#define tls_send(buf, len, flags) (-1)
+#define tls_recv(buf, len, flags) (-1)
+#define tls_send_data_from_fd(fd, len) (-1)
+#define tls_recv_data_to_fd(fd, len) (-1)
 #define tls_terminate_session(async)
-#define tls_x509_load_public_key()				(0)
+#define tls_x509_load_public_key() (0)
 #define tls_encrypt_data(data, data_size, tag_data, nonce_data) (-1)
-#define tls_encrypt_file(fd_in, fd_out, data_size)		(-1)
-#define write_img_cipher()					(0)
+#define tls_encrypt_file(fd_in, fd_out, data_size) (-1)
+#define tls_decrypt_data(data, data_size, tag_data, nonce_data) (-1)
+#define tls_load_token() (0)
+#define write_img_cipher() (0)
 
 #endif /* CONFIG_HAS_GNUTLS */
 

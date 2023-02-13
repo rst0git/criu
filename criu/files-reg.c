@@ -368,17 +368,22 @@ static int mkreg_ghost(char *path, GhostFileEntry *gfe, struct cr_img *img)
 	if (gfd < 0)
 		return -1;
 
-	if (gfe->chunks) {
-		if (!gfe->has_size) {
-			pr_err("Corrupted ghost image -> no size\n");
-			close(gfd);
-			return -1;
-		}
-
-		ret = copy_file_from_chunks(img, gfd, gfe->size);
+	if (opts.tls) {
+		ret = tls_decrypt_file(img_raw_fd(img), gfd, gfe->size);
 	} else {
-		ret = copy_file(img_raw_fd(img), gfd, 0);
+		if (gfe->chunks) {
+			if (!gfe->has_size) {
+				pr_err("Corrupted ghost image -> no size\n");
+				close(gfd);
+				return -1;
+			}
+
+			ret = copy_file_from_chunks(img, gfd, gfe->size);
+		} else {
+			ret = copy_file(img_raw_fd(img), gfd, 0);
+		}
 	}
+
 	if (ret < 0)
 		unlink(path);
 	close(gfd);

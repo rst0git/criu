@@ -52,6 +52,8 @@ int do_pb_read_one(struct cr_img *img, void **pobj, int type, bool eof)
 	char img_name_buf[PATH_MAX];
 	u8 local[PB_PKOBJ_LOCAL_SIZE];
 	void *buf = (void *)&local;
+	uint8_t tag_data[16];	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t nonce_data[12]; // 96-bits nonce for ChaCha20-Poly1305
 	u32 size;
 	int ret;
 
@@ -94,6 +96,41 @@ int do_pb_read_one(struct cr_img *img, void **pobj, int type, bool eof)
 		pr_perror("Read %d bytes while %d expected from %s", ret, size, image_name(img, img_name_buf));
 		ret = -1;
 		goto err;
+	}
+
+	if (opts.tls && type != PB_CIPHER) {
+		/* Read tag data */
+		ret = bread(&img->_x, tag_data, sizeof(tag_data));
+		if (ret < 0) {
+			pr_perror("Can't read %lu bytes of tag data from file %s", sizeof(tag_data),
+				  image_name(img, img_name_buf));
+			goto err;
+		} else if (ret != sizeof(tag_data)) {
+			pr_perror("Read %d bytes of tag data while %lu expected from %s", ret, sizeof(tag_data),
+				  image_name(img, img_name_buf));
+			ret = -1;
+			goto err;
+		}
+
+		/* Read nonce data */
+		ret = bread(&img->_x, nonce_data, sizeof(nonce_data));
+		if (ret < 0) {
+			pr_perror("Can't read %lu bytes of nonce data from file %s", sizeof(nonce_data),
+				  image_name(img, img_name_buf));
+			goto err;
+		} else if (ret != sizeof(nonce_data)) {
+			pr_perror("Read %d bytes of nonce data while %lu expected from %s", ret, sizeof(nonce_data),
+				image_name(img, img_name_buf));
+			ret = -1;
+			goto err;
+		}
+
+		/* Decrypt the content of buf */
+		ret = tls_decrypt_data(buf, size, tag_data, nonce_data);
+		if (ret < 0) {
+			pr_err("Failed to decrypt object\n");
+			goto err;
+		}
 	}
 
 	*pobj = cr_pb_descs[type].unpack(NULL, size, buf);
