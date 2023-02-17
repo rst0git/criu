@@ -3,6 +3,12 @@ import argparse
 import sys
 import json
 import os
+import base64
+
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
 
 import pycriu
 
@@ -35,11 +41,53 @@ def dinf(opts, name):
     return open(os.path.join(opts['dir'], name), mode='rb')
 
 
+def get_cipher_token(opts):
+    """
+    get_cipher_token returns the decrypted cipher token.
+    """
+    plaintext_token = None
+    cipher_img_path = os.path.join(os.path.dirname(os.path.realpath(opts['in'])), 'cipher.img')
+
+    # We assume that when this image is not present,
+    # the checkpoint images are not encrypted. Thus,
+    # here we continue with normal decode if 'cipher.img'
+    # doesn't exist.
+    if not os.path.exists(cipher_img_path):
+        return
+
+    with open(cipher_img_path, mode='rb') as cipher_img_file:
+        cipher_img = pycriu.images.load(cipher_img_file)
+        # Validate the content of the cipher.img
+        if ('entries' not in cipher_img
+            or len(cipher_img['entries']) != 1
+            or 'token' not in cipher_img['entries'][0]
+        ):
+            raise TypeError("Invalid cipher image")
+
+    encrypted_token = base64.b64decode(cipher_img['entries'][0]['token'])
+
+    # FIXME: Allow user to specify the file path of the key.
+    priv_key_file = "/etc/pki/criu/private/key.pem"
+    with open(priv_key_file, "rb") as f:
+        priv_key = serialization.load_pem_private_key(f.read(), None, default_backend())
+        if not isinstance(priv_key, rsa.RSAPrivateKey):
+            # FIXME: Add support for keys other than RSA.
+            raise TypeError("Only RSA private keys are supported.")
+
+    # GnuTLS uses the PKCS#1 v1.5 padding scheme by default.
+    plaintext_token = priv_key.decrypt(encrypted_token, padding.PKCS1v15())
+    return plaintext_token
+
+
 def decode(opts):
     indent = None
+    token = None
+
+    if os.path.basename(opts['in']) != 'cipher.img':
+        token = get_cipher_token(opts)
 
     try:
-        img = pycriu.images.load(inf(opts), opts['pretty'], opts['nopl'])
+        img = pycriu.images.load(inf(opts), opts['pretty'], opts['nopl'], token)
     except pycriu.images.MagicException as exc:
         print("Unknown magic %#x.\n"\
           "Maybe you are feeding me an image with "\
