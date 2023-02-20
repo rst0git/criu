@@ -2088,3 +2088,33 @@ int set_opts_cap_eff(void)
 
 	return 0;
 }
+
+int check_file_permissions(const char *filename, mode_t mode)
+{
+	int ret = -1;
+	int fd = -1;
+	struct stat sb;
+
+	fd = open(filename, O_RDONLY);
+	if (fd < 0) {
+		pr_perror("Failed to open file %s", filename);
+		goto err;
+	}
+
+	ret = fstat(fd, &sb);
+	if (ret == -1) {
+		pr_perror("Failed to stat file %s", filename);
+		goto err;
+	}
+
+	if (((sb.st_uid != 0 && sb.st_uid != getuid()) || (sb.st_mode & 022) != 0)) {
+		pr_err("Bad owner or permissions on %s", filename);
+		goto err;
+	}
+
+	ret = 0;
+err:
+	if (fd > -1)
+		close(fd);
+	return ret;
+}

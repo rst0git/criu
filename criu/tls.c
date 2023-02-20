@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -14,6 +15,7 @@
 #include "protobuf.h"
 #include "cr_options.h"
 #include "xmalloc.h"
+#include "util.h"
 
 /* Compatibility with GnuTLS version < 3.5 */
 #ifndef GNUTLS_E_CERTIFICATE_VERIFICATION_ERROR
@@ -438,6 +440,10 @@ int tls_x509_load_public_key(void)
 		cert_file_path = opts.tls_cert;
 
 	pr_debug("Loading public key from %s\n", cert_file_path);
+
+	if (check_file_permissions(cert_file_path, 022))
+		return -1;
+
 	ret = gnutls_load_file(cert_file_path, &cert_data);
 	if (ret < 0) {
 		tls_perror("Failed to load certificate file", ret);
@@ -505,6 +511,10 @@ int tls_load_token(void)
 		privkey_file_path = opts.tls_key;
 
 	pr_debug("Loading private key from %s\n", privkey_file_path);
+
+	if (check_file_permissions(privkey_file_path, 077))
+		return -1;
+
 	ret = gnutls_load_file(privkey_file_path, &key_data);
 	if (ret < 0) {
 		tls_perror("Failed to load private key file", ret);

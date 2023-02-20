@@ -179,6 +179,7 @@ static inline bool dir_dots(const struct dirent *de)
 }
 
 extern int is_empty_dir(int dirfd);
+extern int check_file_permissions(const char *filename, mode_t mode);
 
 /*
  * Size of buffer to carry the worst case or /proc/self/fd/N
