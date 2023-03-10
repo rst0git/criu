@@ -16,6 +16,7 @@
 #include <linux/fiemap.h>
 #include <linux/fs.h>
 
+#include "tls.h"
 #include "tty.h"
 #include "stats.h"
 
@@ -1004,18 +1005,22 @@ static int dump_ghost_file(int _fd, u32 id, const struct stat *st, dev_t phys_de
 			goto err_out;
 		}
 
-		if (gfe.chunks) {
-			if (opts.ghost_fiemap) {
-				ret = copy_file_to_chunks_fiemap(fd, img, st->st_size);
-				if (ret == -EOPNOTSUPP) {
-					pr_debug("file system don't support fiemap\n");
+		if (opts.tls) {
+			ret = tls_encrypt_file(fd, img_raw_fd(img), st->st_size);
+		} else {
+			if (gfe.chunks) {
+				if (opts.ghost_fiemap) {
+					ret = copy_file_to_chunks_fiemap(fd, img, st->st_size);
+					if (ret == -EOPNOTSUPP) {
+						pr_debug("file system don't support fiemap\n");
+						ret = copy_file_to_chunks(fd, img, st->st_size);
+					}
+				} else {
 					ret = copy_file_to_chunks(fd, img, st->st_size);
 				}
 			} else {
-				ret = copy_file_to_chunks(fd, img, st->st_size);
+				ret = copy_file(fd, img_raw_fd(img), st->st_size);
 			}
-		} else {
-			ret = copy_file(fd, img_raw_fd(img), st->st_size);
 		}
 
 		close(fd);

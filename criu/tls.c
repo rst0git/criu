@@ -592,3 +592,76 @@ err:
 	close_image(img);
 	return ret;
 }
+
+int tls_encrypt_file(int fd_in, int fd_out, size_t data_size)
+{
+	void *buf;
+	uint8_t tag_data[16];	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t nonce_data[12]; // 96-bits nonce for ChaCha20-Poly1305
+	size_t chunk_size = 4096;
+	ssize_t num_chunks = 0;
+	ssize_t written = 0;
+	ssize_t total_written = 0;
+	ssize_t total_size;
+	ssize_t ret;
+
+	if (!opts.tls)
+		return 0;
+
+	if (data_size < chunk_size)
+		chunk_size = data_size;
+
+	buf = xmalloc(chunk_size);
+	if (!buf)
+		return -1;
+
+	/* FIXME: Could we use vmsplice instead of read/wite here? */
+	while (1) {
+		ret = read(fd_in, buf, chunk_size);
+		if (ret < 0) {
+			pr_perror("Can't read ghost file data");
+			goto err;
+		}
+		if (ret == 0) {
+			break;
+		}
+
+		/* Encrypt buffer data using ChaCha20-Poly1305 */
+		if (tls_encrypt_data(buf, ret, tag_data, nonce_data) < 0) {
+			pr_err("Failed to encrypt buffer data\n");
+			return -1;
+		}
+
+		written = write(fd_out, buf, ret);
+		if (written <= 0) {
+			pr_perror("Can't write ghost file data");
+			goto err;
+		}
+
+		/* The order of tag and nonce is important */
+		ret = write(fd_out, tag_data, sizeof(tag_data));
+		if (ret != sizeof(tag_data)) {
+			pr_err("Failed to write tag data to image file");
+			goto err;
+		}
+		written += ret;
+
+		ret = write(fd_out, nonce_data, sizeof(nonce_data));
+		if (ret != sizeof(nonce_data)) {
+			pr_err("Failed to write nonce data to image file");
+			goto err;
+		}
+
+		total_written += written + ret;
+		num_chunks++;
+	}
+
+err:
+	xfree(buf);
+	total_size = data_size + num_chunks * sizeof(tag_data) + sizeof(nonce_data);
+	if (data_size && total_written != total_size) {
+		return -1;
+	}
+
+	return 0;
+}
