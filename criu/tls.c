@@ -1,3 +1,4 @@
+#include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -735,4 +736,152 @@ int tls_decrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *n
 	gnutls_aead_cipher_deinit(handle);
 
 	return ret;
+}
+
+/**
+ * tls_encrypt_file_data reads data from fd_in, encrypts the data, and writes
+ * the encrypted data to fd_out.
+ */
+int tls_encrypt_file_data(int fd_in, int fd_out, size_t data_size)
+{
+	void *buf;
+	uint8_t tag_data[16];	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t nonce_data[12]; // 96-bits nonce for ChaCha20-Poly1305
+	size_t chunk_size = 4096;
+	ssize_t num_chunks = 0;
+	ssize_t written;
+	ssize_t bytes;
+	ssize_t total_written = 0;
+	ssize_t total_size;
+
+	if (data_size < chunk_size)
+		chunk_size = data_size;
+
+	buf = xmalloc(chunk_size);
+	if (!buf)
+		return -1;
+
+	/* FIXME: Could we use vmsplice instead of read/write here? */
+	while (1) {
+		bytes = read(fd_in, buf, chunk_size);
+		if (bytes < 0) {
+			pr_perror("Can't read ghost file data");
+			goto err;
+		}
+		if (bytes == 0) {
+			break;
+		}
+
+		/* Encrypt buffer data using ChaCha20-Poly1305 */
+		if (tls_encrypt_data(buf, bytes, tag_data, nonce_data) < 0) {
+			pr_err("Failed to encrypt buffer data\n");
+			return -1;
+		}
+
+		/* The order of tag and nonce is important */
+		if (write(fd_out, tag_data, sizeof(tag_data)) != sizeof(tag_data)) {
+			pr_err("Failed to write tag data to image file\n");
+			goto err;
+		}
+
+		if (write(fd_out, nonce_data, sizeof(nonce_data)) != sizeof(nonce_data)) {
+			pr_err("Failed to write nonce data to image file\n");
+			goto err;
+		}
+
+		written = write(fd_out, buf, bytes);
+		if (written != bytes) {
+			if (written < 0)
+				pr_perror("Failed to write ghost file data");
+			else
+				pr_err("Failed to write all data to image file (%zd != %zd)\n", written, bytes);
+			goto err;
+		}
+
+		total_written += written + sizeof(tag_data) + sizeof(nonce_data);
+		num_chunks++;
+	}
+
+err:
+	xfree(buf);
+	total_size = data_size + num_chunks * (sizeof(tag_data) + sizeof(nonce_data));
+	if (data_size && total_written != total_size) {
+		pr_err("Failed to write all data to image file (%ld != %ld)\n", total_written, total_size);
+		return -1;
+	}
+
+	return 0;
+}
+
+/**
+ * tls_decrypt_file_data reads encrypted data from fd_in, decrypts the data,
+ * and writes the decrypted data to fd_out.
+ */
+int tls_decrypt_file_data(int fd_in, int fd_out, size_t data_size)
+{
+	void *buf;
+	uint8_t tag_data[16];	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t nonce_data[12]; // 96-bits nonce for ChaCha20-Poly1305
+	size_t chunk_size = 4096;
+	ssize_t total_written = 0;
+	ssize_t bytes, written;
+
+	if (data_size > 0 && data_size < chunk_size)
+		chunk_size = data_size;
+
+	buf = xmalloc(chunk_size);
+	if (!buf)
+		return -1;
+
+	/* FIXME: Could we use vmsplice instead of read/write here? */
+	while (1) {
+		/* Read tag data */
+		if (read(fd_in, tag_data, sizeof(tag_data)) != sizeof(tag_data)) {
+			pr_err("Failed to read tag data to image file\n");
+			goto err;
+		}
+
+		/* Read nonce data */
+		if (read(fd_in, nonce_data, sizeof(nonce_data)) != sizeof(nonce_data)) {
+			pr_err("Failed to read nonce data to image file\n");
+			goto err;
+		}
+
+		/* Read ciphertext data */
+		bytes = read(fd_in, buf, chunk_size);
+		if (bytes == 0) {
+			break;
+		}
+		if (bytes < 0) {
+			pr_perror("Failed to read ghost file data");
+			goto err;
+		}
+
+		/* Decrypt buffer data using ChaCha20-Poly1305 */
+		if (tls_decrypt_data(buf, bytes, tag_data, nonce_data) < 0) {
+			pr_err("Failed to decrypt buffer data\n");
+			return -1;
+		}
+
+		/* Write plaintext data */
+		written = write(fd_out, buf, bytes);
+		if (written != bytes) {
+			if (written < 0)
+				pr_perror("Failed to write ghost file data");
+			else
+				pr_err("Failed to write all data to file (%zd != %zd)\n", written, bytes);
+			goto err;
+		}
+
+		total_written += written;
+	}
+
+err:
+	xfree(buf);
+	if (data_size && total_written != data_size) {
+		pr_err("Failed to write all data to file (%ld != %ld)\n", total_written, data_size);
+		return -1;
+	}
+
+	return 0;
 }
