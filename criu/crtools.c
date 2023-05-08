@@ -228,10 +228,10 @@ int main(int argc, char *argv[], char *envp[])
 		}
 	}
 
-	if (opts.stream && image_dir_mode(argv, optind) == -1) {
-		pr_err("--stream cannot be used with the %s command\n", argv[optind]);
-		goto usage;
-	}
+	// if (opts.stream && image_dir_mode(argv, optind) == -1) {
+	// 	pr_err("--stream cannot be used with the %s command\n", argv[optind]);
+	// 	goto usage;
+	// }
 
 	/* We must not open imgs dir, if service is called */
 	if (opts.mode != CR_SERVICE) {

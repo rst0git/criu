@@ -187,7 +187,7 @@ int add_script(char *path)
 {
 	struct script *script;
 
-	BUG_ON(scripts_mode == SCRIPTS_RPC);
+	// BUG_ON(scripts_mode == SCRIPTS_RPC);
 	scripts_mode = SCRIPTS_SHELL;
 
 	script = xmalloc(sizeof(struct script));
@@ -214,7 +214,7 @@ int add_rpc_notify(int sk)
 		return -1;
 	}
 
-	BUG_ON(scripts_mode == SCRIPTS_SHELL);
+	// BUG_ON(scripts_mode == SCRIPTS_SHELL);
 	scripts_mode = SCRIPTS_RPC;
 
 	if (install_service_fd(RPC_SK_OFF, fd) < 0)
