@@ -65,6 +65,7 @@ fedora-rawhide() {
 	#
 	ssh default 'sudo dnf remove -y crun || true'
 	ssh default sudo dnf install -y podman runc
+	ssh default sudo rm -rf /var/lib/containers/storage
 	ssh default 'cd /vagrant; tar xf criu.tar; cd criu; sudo -E make -C scripts/ci fedora-rawhide CONTAINER_RUNTIME=podman BUILD_OPTIONS="--security-opt seccomp=unconfined"'
 }
 
