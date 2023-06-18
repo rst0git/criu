@@ -56,7 +56,8 @@ install: lib-c lib-a lib-py crit/crit lib/c/criu.pc.in
 	$(Q) install -m 644 lib/c/criu.pc $(DESTDIR)$(LIBDIR)/pkgconfig
 ifeq ($(PYTHON),python3)
 	$(E) "  INSTALL " crit
-	$(Q) $(PYTHON) -m pip install --upgrade --force-reinstall --prefix=$(DESTDIR)$(PREFIX) ./crit
+	$(Q) $(PYTHON) -m pip install -r ./crit/requirements.txt
+	$(Q) $(PYTHON) -m pip install --no-build-isolation --upgrade --ignore-installed --prefix=$(DESTDIR)$(PREFIX) ./crit
 endif
 .PHONY: install
 
