@@ -85,6 +85,8 @@ mmap_flags_map = [
     ('MAP_PRIVATE', 0x2),
     ('MAP_ANON', 0x20),
     ('MAP_GROWSDOWN', 0x0100),
+    ('MAP_HUGETLB', 0x40000),
+    ('MAP_UNINITIALIZED', 0x4000000),
 ]
 
 mmap_status_map = [
