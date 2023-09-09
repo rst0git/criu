@@ -149,8 +149,8 @@ int dump_one_bpfmap_data(BpfmapFileEntry *bpf, int lfd, const struct fd_parms *p
 	 */
 
 	struct cr_img *img;
-	uint32_t key_size, value_size, max_entries, count;
-	void *keys = NULL, *values = NULL;
+	uint32_t key_size, value_size, total_size, max_entries, count;
+	void *keys = NULL, *values = NULL, *map_memory = NULL;
 	void *in_batch = NULL, *out_batch = NULL;
 	BpfmapDataEntry bde = BPFMAP_DATA_ENTRY__INIT;
 	LIBBPF_OPTS(bpf_map_batch_opts, bpfmap_opts);
@@ -161,17 +161,19 @@ int dump_one_bpfmap_data(BpfmapFileEntry *bpf, int lfd, const struct fd_parms *p
 	max_entries = bpf->max_entries;
 	count = max_entries;
 
-	keys = mmap(NULL, key_size * max_entries, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
-	if (keys == MAP_FAILED) {
-		pr_perror("Can't map memory for BPF map keys");
+	// Calculate the total size needed for both keys and values
+	total_size = (key_size + value_size) * max_entries;
+
+	// Map memory for both keys and values
+	map_memory = mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+	if (map_memory == MAP_FAILED) {
+		pr_perror("Can't map memory for BPF map keys and values");
 		goto err;
 	}
 
-	values = mmap(NULL, value_size * max_entries, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
-	if (values == MAP_FAILED) {
-		pr_perror("Can't map memory for BPF map values");
-		goto err;
-	}
+	// Use pointers to access keys and values within the mapped memory
+	keys = map_memory;
+	values = map_memory + (key_size * max_entries);
 
 	out_batch = mmap(NULL, key_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
 	if (out_batch == MAP_FAILED) {
@@ -195,23 +197,17 @@ int dump_one_bpfmap_data(BpfmapFileEntry *bpf, int lfd, const struct fd_parms *p
 	if (pb_write_one(img, &bde, PB_BPFMAP_DATA))
 		goto err;
 
-	if (write(img_raw_fd(img), keys, key_size * count) != (key_size * count)) {
-		pr_perror("Can't write BPF map's keys");
-		goto err;
-	}
-	if (write(img_raw_fd(img), values, value_size * count) != (value_size * count)) {
-		pr_perror("Can't write BPF map's values");
+	if (write(img_raw_fd(img), map_memory, total_size) != total_size) {
+		pr_perror("Can't write BPF map's keys and values");
 		goto err;
 	}
 
-	munmap(keys, key_size * max_entries);
-	munmap(values, value_size * max_entries);
+	munmap(map_memory, total_size);
 	munmap(out_batch, key_size);
 	return 0;
 
 err:
-	munmap(keys, key_size * max_entries);
-	munmap(values, value_size * max_entries);
+	munmap(map_memory, total_size);
 	munmap(out_batch, key_size);
 	return -1;
 }
