@@ -2,11 +2,13 @@
 #include <bpf/bpf.h>
 
 #include "common/compiler.h"
+#include "cr_options.h"
 #include "imgset.h"
 #include "bpfmap.h"
 #include "fdinfo.h"
 #include "image.h"
 #include "util.h"
+#include "tls.h"
 #include "log.h"
 
 #include "protobuf.h"
@@ -31,6 +33,11 @@ struct bpfmap_data_rst *bpfmap_data_hash_table[BPFMAP_DATA_TABLE_SIZE];
 
 static int bpfmap_data_read(struct cr_img *img, struct bpfmap_data_rst *r)
 {
+	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t tag_data[16];
+	// 96-bits nonce for ChaCha20-Poly1305
+	uint8_t nonce_data[12];
+
 	unsigned long bytes = r->bde->keys_bytes + r->bde->values_bytes;
 	if (!bytes)
 		return 0;
@@ -41,7 +48,28 @@ static int bpfmap_data_read(struct cr_img *img, struct bpfmap_data_rst *r)
 		return -1;
 	}
 
-	return read_img_buf(img, r->data, bytes);
+	if (!opts.tls)
+		// No encryption, just read the data
+		return read_img_buf(img, r->data, bytes);
+
+	if (read_img_buf(img, tag_data, sizeof(tag_data)) < 0) {
+		pr_err("Can't read bpfmap tag data\n");
+		return -1;
+	}
+
+	if (read_img_buf(img, nonce_data, sizeof(nonce_data)) < 0) {
+		pr_err("Can't read bpfmap nonce data\n");
+		return -1;
+	}
+
+	if (read_img_buf(img, r->data, bytes) < 0) {
+		pr_err("Can't read bpfmap data\n");
+		return -1;
+	}
+
+	// Decrypt buffer data using ChaCha20-Poly1305
+	tls_decrypt_data(r->data, bytes, tag_data, nonce_data);
+	return 0;
 }
 
 int do_collect_bpfmap_data(struct bpfmap_data_rst *r, ProtobufCMessage *msg, struct cr_img *img,
@@ -156,6 +184,11 @@ int dump_one_bpfmap_data(BpfmapFileEntry *bpf, int lfd, const struct fd_parms *p
 	LIBBPF_OPTS(bpf_map_batch_opts, bpfmap_opts);
 	int ret;
 
+	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t tag_data[16];
+	// 96-bits nonce for ChaCha20-Poly1305
+	uint8_t nonce_data[12];
+
 	key_size = bpf->key_size;
 	value_size = bpf->value_size;
 	max_entries = bpf->max_entries;
@@ -196,6 +229,23 @@ int dump_one_bpfmap_data(BpfmapFileEntry *bpf, int lfd, const struct fd_parms *p
 
 	if (pb_write_one(img, &bde, PB_BPFMAP_DATA))
 		goto err;
+
+	if (opts.tls) {
+		// Encrypt buffer data using ChaCha20-Poly1305
+		if (tls_encrypt_data(map_memory, total_size, tag_data, nonce_data)) {
+			pr_err("Can't encrypt BPF map's keys and values\n");
+			goto err;
+		}
+		// Write ChaCha20-Poly1305 tag data
+		if (write(img_raw_fd(img), tag_data, sizeof(tag_data)) != sizeof(tag_data)) {
+			pr_perror("Can't write BPF map's tag data");
+			goto err;
+		}
+		if (write(img_raw_fd(img), nonce_data, sizeof(nonce_data)) != sizeof(nonce_data)) {
+			pr_perror("Can't write BPF map's nonce data");
+			goto err;
+		}
+	}
 
 	if (write(img_raw_fd(img), map_memory, total_size) != total_size) {
 		pr_perror("Can't write BPF map's keys and values");
