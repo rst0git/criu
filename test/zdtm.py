@@ -1246,6 +1246,10 @@ class criu:
         if not os.access(self.__stats_file("dump"), os.R_OK):
             return
 
+        # We don't check pages counts for encrypted images.
+        if self.__tls:
+            return
+
         stats_written = -1
         with open(self.__stats_file("dump"), 'rb') as stfile:
             stats = crpc.images.load(stfile)
@@ -1343,7 +1347,7 @@ class criu:
         os.mkdir(self.__ddir())
         os.chmod(self.__ddir(), 0o777)
 
-        a_opts = ["--tree", self.__test.getpid()]
+        a_opts = ["--tree", self.__test.getpid()] + self.__tls
         if self.__prev_dump_iter:
             a_opts += [
                 "--prev-images-dir",
@@ -1363,7 +1367,7 @@ class criu:
                                                    nowait=True)
             a_opts += [
                 "--page-server", "--address", "127.0.0.1", "--port", "12345"
-            ] + self.__tls
+            ]
 
         a_opts += self.__test.getdopts()
 
@@ -1390,7 +1394,7 @@ class criu:
 
         nowait = False
         if self.__lazy_migrate and action == "dump":
-            a_opts += ["--lazy-pages", "--port", "12345"] + self.__tls
+            a_opts += ["--lazy-pages", "--port", "12345"]
             nowait = True
         self.__dump_process = self.__criu_act(action,
                                               opts=a_opts + opts,
@@ -1418,7 +1422,7 @@ class criu:
                 raise test_fail_exc("criu page-server exited with %d" % ret)
 
     def restore(self):
-        r_opts = []
+        r_opts = self.__tls
         if self.__restore_sibling:
             r_opts = ["--restore-sibling"]
             self.__test.auto_reap = False

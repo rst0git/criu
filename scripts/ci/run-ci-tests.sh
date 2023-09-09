@@ -220,6 +220,9 @@ fi
 
 ./test/zdtm.py run -a -p 2 --keep-going --criu-config "${ZDTM_OPTS[@]}"
 
+# Run tests with encrypted CRIU images
+./test/zdtm.py run -a -p 2 --keep-going --tls "${ZDTM_OPTS[@]}"
+
 # Newer kernels are blocking access to userfaultfd:
 # uffd: Set unprivileged_userfaultfd sysctl knob to 1 if kernel faults must be handled without obtaining CAP_SYS_PTRACE capability
 if [ -e /proc/sys/vm/unprivileged_userfaultfd ]; then
