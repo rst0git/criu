@@ -4,11 +4,13 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 
+#include "cr_options.h"
 #include "crtools.h"
 #include "imgset.h"
 #include "image.h"
 #include "files.h"
 #include "pipes.h"
+#include "tls.h"
 #include "util-pie.h"
 #include "autofs.h"
 
@@ -32,6 +34,8 @@ static void show_saved_pipe_fds(struct pipe_info *pi)
 
 static int pipe_data_read(struct cr_img *img, struct pipe_data_rst *r)
 {
+	uint8_t tag_data[16];	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t nonce_data[12]; // 96-bits nonce for ChaCha20-Poly1305
 	unsigned long bytes = r->pde->bytes;
 
 	if (!bytes)
@@ -52,7 +56,27 @@ static int pipe_data_read(struct cr_img *img, struct pipe_data_rst *r)
 		return -1;
 	}
 
-	return read_img_buf(img, r->data, bytes);
+	if (!opts.tls)
+		// No encryption, just read the data
+		return read_img_buf(img, r->data, bytes);
+
+	if (read_img_buf(img, tag_data, sizeof(tag_data)) < 0) {
+		pr_err("Can't read tag data\n");
+		return -1;
+	}
+
+	if (read_img_buf(img, nonce_data, sizeof(nonce_data)) < 0) {
+		pr_err("Can't read nonce data\n");
+		return -1;
+	}
+
+	if (read_img_buf(img, r->data, bytes) < 0) {
+		pr_err("Can't read pipe data\n");
+		return -1;
+	}
+
+	// Decrypt buffer data using ChaCha20-Poly1305
+	return tls_decrypt_data(r->data, bytes, tag_data, nonce_data);
 }
 
 int do_collect_pipe_data(struct pipe_data_rst *r, ProtobufCMessage *msg, struct cr_img *img,
@@ -396,9 +420,12 @@ struct collect_image_info pipe_data_cinfo = {
 int dump_one_pipe_data(struct pipe_data_dump *pd, int lfd, const struct fd_parms *p)
 {
 	struct cr_img *img;
+	struct iovec iov;
 	int pipe_size, i, bytes;
 	int steal_pipe[2];
 	int ret = -1;
+	uint8_t tag_data[16];	// 128-bits tag for ChaCha20-Poly1305
+	uint8_t nonce_data[12]; // 96-bits nonce for ChaCha20-Poly1305
 	PipeDataEntry pde = PIPE_DATA_ENTRY__INIT;
 
 	if (p->flags & O_WRONLY)
@@ -455,15 +482,60 @@ int dump_one_pipe_data(struct pipe_data_dump *pd, int lfd, const struct fd_parms
 	if (pb_write_one(img, &pde, PB_PIPE_DATA))
 		goto err_close;
 
-	while (bytes > 0) {
-		int wrote;
-		wrote = splice(steal_pipe[0], NULL, img_raw_fd(img), NULL, bytes, 0);
-		if (wrote < 0) {
-			pr_perror("Can't push pipe data");
-			goto err_close;
-		} else if (wrote == 0)
-			break;
-		bytes -= wrote;
+	if (bytes > 0) {
+		if (opts.tls) {
+			iov.iov_base = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+			if (iov.iov_base == MAP_FAILED) {
+				pr_perror("Can't map mem for pipe buffers");
+				goto err_close;
+			}
+
+			iov.iov_len = bytes;
+
+			ret = vmsplice(steal_pipe[0], &iov, 1, SPLICE_F_GIFT);
+			if (ret < 0) {
+				pr_perror("Error splicing pipe data to memory");
+				goto err_close;
+			}
+
+			if (ret == 0 || ret > iov.iov_len /* sanity */) {
+				pr_err("Wanted to restore %zu bytes, but got %d\n", iov.iov_len, ret);
+				goto err_close;
+			}
+
+			// Encrypt buffer data using ChaCha20-Poly1305
+			if (tls_encrypt_data(iov.iov_base, iov.iov_len, tag_data, nonce_data)) {
+				pr_err("Can't encrypt pipe buffer data\n");
+				goto err_close;
+			}
+
+			// Write ChaCha20-Poly1305 tag data
+			if (write(img_raw_fd(img), tag_data, sizeof(tag_data)) != sizeof(tag_data)) {
+				pr_perror("Can't write tag data");
+				goto err_close;
+			}
+			if (write(img_raw_fd(img), nonce_data, sizeof(nonce_data)) != sizeof(nonce_data)) {
+				pr_perror("Can't write nonce data");
+				goto err_close;
+			}
+			if (write(img_raw_fd(img), iov.iov_base, iov.iov_len) != iov.iov_len) {
+				pr_perror("Can't write nonce data");
+				goto err_close;
+			}
+		} else {
+			while (bytes > 0) {
+				int wrote;
+				wrote = splice(steal_pipe[0], NULL, img_raw_fd(img), NULL, bytes, 0);
+				if (wrote == 0)
+					break;
+
+				if (wrote < 0) {
+					pr_perror("Can't push pipe data");
+					goto err_close;
+				}
+				bytes -= wrote;
+			}
+		}
 	}
 
 	ret = 0;
@@ -471,6 +543,9 @@ int dump_one_pipe_data(struct pipe_data_dump *pd, int lfd, const struct fd_parms
 err_close:
 	close(steal_pipe[0]);
 	close(steal_pipe[1]);
+
+	if (iov.iov_base)
+		munmap(iov.iov_base, iov.iov_len);
 err:
 	return ret;
 }
