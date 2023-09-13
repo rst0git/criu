@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <linux/limits.h>
 
 #include <gnutls/gnutls.h>
@@ -884,4 +885,163 @@ err:
 	}
 
 	return 0;
+}
+
+#define READ_END  0
+#define WRITE_END 1
+
+/**
+ * tls_encryption_pipe creates a pipe and forks a child process that
+ * encrypts data read from the pipe and writes the encrypted data to
+ * the output_fd. The parent process returns the write end of the pipe.
+ */
+int tls_encryption_pipe(int output_fd)
+{
+	pid_t child_pid;
+	int pipe_fds[2], status;
+	char buffer[4096];
+	ssize_t bytes_read;
+	uint8_t tag_data[16];
+	uint8_t nonce_data[12];
+
+	if (pipe(pipe_fds)) {
+		pr_perror("Failed to create pipe");
+		return -1;
+	}
+
+	child_pid = fork();
+	if (child_pid == -1) {
+		pr_perror("Failed to fork");
+		return -1;
+	}
+
+	if (child_pid > 0) {
+		/* Parent process */
+		close(pipe_fds[READ_END]);
+		if (waitpid(child_pid, &status, 0) == -1) {
+			pr_perror("waitpid() failed");
+			return -1;
+		}
+		return pipe_fds[WRITE_END];
+	}
+
+	/* Child process */
+	close(pipe_fds[WRITE_END]);
+
+	child_pid = fork();
+	if (child_pid == -1) {
+		pr_perror("Failed to double fork");
+		exit(1);
+	}
+
+	/* We use double-fork to run the child process in parallel. */
+	if (child_pid > 0) {
+		exit(0);
+	}
+
+	while (1) {
+		bytes_read = read(pipe_fds[READ_END], buffer, sizeof(buffer));
+		if (bytes_read == -1) {
+			exit(1);
+		} else if (bytes_read == 0) {
+			// End of input
+			break;
+		} else {
+			if (tls_encrypt_data(buffer, bytes_read, tag_data, nonce_data) < 0) {
+				pr_err("Failed to encrypt buffer data\n");
+				exit(1);
+			}
+
+			if (write(output_fd, tag_data, sizeof(tag_data)) != sizeof(tag_data)) {
+				exit(1);
+			}
+
+			if (write(output_fd, nonce_data, sizeof(nonce_data)) != sizeof(nonce_data)) {
+				exit(1);
+			}
+
+			if (write(output_fd, buffer, bytes_read) != bytes_read) {
+				exit(1);
+			}
+		}
+	}
+	exit(0);
+}
+
+/**
+ * tls_decryption_pipe creates a pipe and forks a child process that
+ * reads encrypted data from the input_fd, decrypts the data, and
+ * writes the decrypted data to the pipe. The parent process returns
+ * the read end of the pipe.
+ */
+int tls_decryption_pipe(int intput_fd)
+{
+	pid_t child_pid;
+	int pipe_fds[2], ret, status;
+	char buffer[4096];
+	ssize_t bytes_read;
+	uint8_t tag_data[16];
+	uint8_t nonce_data[12];
+
+	if (pipe(pipe_fds)) {
+		pr_perror("Failed to create pipe");
+		return -1;
+	}
+
+	child_pid = fork();
+	if (child_pid == -1) {
+		pr_perror("Failed to fork");
+		return -1;
+	}
+
+	if (child_pid > 0) {
+		/* Parent process */
+		close(pipe_fds[WRITE_END]);
+		if (waitpid(child_pid, &status, 0) == -1) {
+			pr_perror("waitpid() failed");
+			return -1;
+		}
+		return pipe_fds[READ_END];
+	}
+
+	/* Child process */
+	close(pipe_fds[READ_END]);
+
+	while (1) {
+		/* Read tag data */
+		ret = read(intput_fd, tag_data, sizeof(tag_data));
+		if (ret == 0) {
+			// End of input
+			break;
+		}
+
+		if (ret != sizeof(tag_data)) {
+			pr_err("Failed to read tag data\n");
+			exit(1);
+		}
+
+		/* Read nonce data */
+		if (read(intput_fd, nonce_data, sizeof(nonce_data)) != sizeof(nonce_data)) {
+			pr_err("Failed to read nonce data\n");
+			exit(1);
+		}
+
+		bytes_read = read(intput_fd, buffer, sizeof(buffer));
+		if (bytes_read == -1) {
+			exit(1);
+		} else if (bytes_read == 0) {
+			// End of input
+			break;
+		} else {
+			if (tls_decrypt_data(buffer, bytes_read, tag_data, nonce_data) < 0) {
+				pr_err("Failed to decrypt buffer data\n");
+				exit(1);
+			}
+
+			if (write(pipe_fds[WRITE_END], buffer, bytes_read) == -1) {
+				exit(1);
+			}
+		}
+	}
+	exit(0);
 }
