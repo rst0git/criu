@@ -46,6 +46,12 @@ struct page_xfer {
 	};
 
 	struct page_read *parent;
+
+	/* 128-bits tag and 96-bits nonce for ChaCha20-Poly1305 */
+	void *tag_data;
+	void *nonce_data;
+	unsigned long tag_data_size;
+	unsigned long nonce_data_size;
 };
 
 extern int open_page_xfer(struct page_xfer *xfer, int fd_type, unsigned long id);

@@ -1409,6 +1409,8 @@ static int prepare_vma_ios(struct pstree_item *t, struct task_restore_args *ta)
 	if (!pages)
 		return -1;
 
+
+	/* FIXME: We need to decrypt the content of pages */
 	ta->vma_ios_fd = img_raw_fd(pages);
 	return pagemap_render_iovec(&rsti(t)->vma_io, ta);
 }

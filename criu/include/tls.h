@@ -5,6 +5,9 @@
 
 #include <stdbool.h>
 
+#include "types.h"
+#include "page-xfer.h"
+
 int tls_x509_init(int sockfd, bool is_server);
 void tls_terminate_session(bool async);
 
@@ -23,6 +26,8 @@ int tls_encrypt_file_data(int fd_in, int fd_out, size_t data_size);
 int tls_decrypt_file_data(int fd_in, int fd_out, size_t data_size);
 int tls_encryption_pipe(int output_fd);
 int tls_decryption_pipe(int intput_fd);
+
+int _tls_encryption_pipe(int output_fd, struct page_xfer *xfer, unsigned long len);
 
 #else /* CONFIG_GNUTLS */
 

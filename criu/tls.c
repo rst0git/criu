@@ -15,6 +15,7 @@
 #include "protobuf.h"
 #include "cr_options.h"
 #include "xmalloc.h"
+#include "tls.h"
 
 /* Compatibility with GnuTLS version < 3.5 */
 #ifndef GNUTLS_E_CERTIFICATE_VERIFICATION_ERROR
@@ -895,7 +896,11 @@ err:
  * encrypts data read from the pipe and writes the encrypted data to
  * the output_fd. The parent process returns the write end of the pipe.
  */
-int tls_encryption_pipe(int output_fd)
+int tls_encryption_pipe(int output_fd) {
+	return _tls_encryption_pipe(output_fd, NULL, 0);
+}
+
+int _tls_encryption_pipe(int output_fd, struct page_xfer *xfer, unsigned long len)
 {
 	pid_t child_pid;
 	int pipe_fds[2], status;
@@ -903,6 +908,23 @@ int tls_encryption_pipe(int output_fd)
 	ssize_t bytes_read;
 	uint8_t tag_data[16];
 	uint8_t nonce_data[12];
+	uint8_t *tag_data_ptr = NULL, *nonce_data_ptr = NULL;
+
+	if (xfer != NULL) {
+		xfer->tag_data_size = len / sizeof(buffer) * 16;
+		xfer->nonce_data_size = len / sizeof(buffer) * 12;
+
+		tag_data_ptr = xfer->tag_data = xmalloc(xfer->tag_data_size);
+		if (tag_data_ptr == NULL) {
+			pr_perror("Failed to allocate tag data");
+			return -1;
+		}
+		nonce_data_ptr = xfer->nonce_data = xmalloc(xfer->nonce_data_size);
+		if (nonce_data_ptr == NULL) {
+			pr_perror("Failed to allocate nonce data");
+			return -1;
+		}
+	}
 
 	if (pipe(pipe_fds)) {
 		pr_perror("Failed to create pipe");
@@ -952,12 +974,20 @@ int tls_encryption_pipe(int output_fd)
 				exit(1);
 			}
 
-			if (write(output_fd, tag_data, sizeof(tag_data)) != sizeof(tag_data)) {
-				exit(1);
-			}
+			if (tag_data_ptr == NULL && nonce_data_ptr == NULL) {
+				if (write(output_fd, tag_data, sizeof(tag_data)) != sizeof(tag_data)) {
+					exit(1);
+				}
 
-			if (write(output_fd, nonce_data, sizeof(nonce_data)) != sizeof(nonce_data)) {
-				exit(1);
+				if (write(output_fd, nonce_data, sizeof(nonce_data)) != sizeof(nonce_data)) {
+					exit(1);
+				}
+			} else {
+				memcpy(tag_data_ptr, tag_data, sizeof(tag_data));
+				tag_data_ptr += sizeof(tag_data);
+
+				memcpy(nonce_data_ptr, nonce_data, sizeof(nonce_data));
+				nonce_data_ptr += sizeof(nonce_data);
 			}
 
 			if (write(output_fd, buffer, bytes_read) != bytes_read) {

@@ -256,9 +256,18 @@ static int write_pages_loc(struct page_xfer *xfer, int p, unsigned long len)
 {
 	ssize_t ret;
 	ssize_t curr = 0;
+	int output_fd = img_raw_fd(xfer->pi);
+
+	if (opts.tls) {
+		output_fd = _tls_encryption_pipe(output_fd, xfer, len);
+		if (output_fd < 0) {
+			pr_err("Unable to create TLS encryption pipe");
+			return -1;
+		}
+	}
 
 	while (1) {
-		ret = splice(p, NULL, img_raw_fd(xfer->pi), NULL, len - curr, SPLICE_F_MOVE);
+		ret = splice(p, NULL, output_fd, NULL, len - curr, SPLICE_F_MOVE);
 		if (ret == -1) {
 			pr_perror("Unable to spice data");
 			return -1;
@@ -326,6 +335,17 @@ static int write_pagemap_loc(struct page_xfer *xfer, struct iovec *iov, u32 flag
 	pe.nr_pages = iov->iov_len / PAGE_SIZE;
 	pe.has_flags = true;
 	pe.flags = flags;
+
+	if (opts.tls && xfer->tag_data_size && xfer->nonce_data_size) {
+		pe.has_crypto_tag = true;
+		pe.has_crypto_nonce = true;
+
+		pe.crypto_tag.len = xfer->tag_data_size;
+		pe.crypto_tag.data = xfer->tag_data;
+
+		pe.crypto_nonce.len = xfer->nonce_data_size;
+		pe.crypto_nonce.data = xfer->nonce_data;
+	}
 
 	if (flags & PE_PRESENT) {
 		if (opts.auto_dedup && xfer->parent != NULL) {

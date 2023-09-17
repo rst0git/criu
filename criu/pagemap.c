@@ -13,6 +13,7 @@
 #include "restorer.h"
 #include "rst-malloc.h"
 #include "page-xfer.h"
+#include "tls.h"
 
 #include "fault-injection.h"
 #include "xmalloc.h"
@@ -233,7 +234,7 @@ static int read_parent_page(struct page_read *pr, unsigned long vaddr, int nr, v
 
 static int read_local_page(struct page_read *pr, unsigned long vaddr, unsigned long len, void *buf)
 {
-	int fd;
+	int fd, i;
 	ssize_t ret;
 	size_t curr = 0;
 
@@ -259,6 +260,23 @@ static int read_local_page(struct page_read *pr, unsigned long vaddr, unsigned l
 		curr += ret;
 		if (curr == len)
 			break;
+	}
+
+	if (opts.tls && pr->pe->has_crypto_tag && pr->pe->has_crypto_nonce) {
+		uint8_t tag_data[16];
+		uint8_t nonce_data[12];
+
+		for (curr = 0, i = 0; curr < len; curr += 4096, i++) {
+			memcpy(tag_data, pr->pe->crypto_tag.data + i * sizeof(tag_data), sizeof(tag_data));
+			memcpy(nonce_data, pr->pe->crypto_nonce.data + i * sizeof(nonce_data), sizeof(nonce_data));
+
+			pr_debug("Decrypting page %d len %zu curr %zu\n", i, len, curr);
+			ret = tls_decrypt_data(buf + curr, len - curr, tag_data, nonce_data);
+			if (ret < 0) {
+				pr_err("Failed to decrypt data\n");
+				return -1;
+			}
+		}
 	}
 
 	if (opts.auto_dedup) {
