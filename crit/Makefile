@@ -16,11 +16,11 @@ ifeq ($(PIP_BREAK_SYSTEM_PACKAGES),0)
 	$(E) "  Consider using PIP_BREAK_SYSTEM_PACKAGES=1 make install"
 else
 	$(E) "  INSTALL " crit
-	$(Q) $(PYTHON) -m pip install --upgrade --ignore-installed --prefix=$(DESTDIR)$(PREFIX) ./crit
+	$(Q) $(PYTHON) ./scripts/_pip.py install --prefix=$(DESTDIR)$(PREFIX) ./crit
 endif
 else
 	$(E) "  INSTALL " crit
-	$(Q) $(PYTHON) -m pip install --upgrade --ignore-installed --prefix=$(DESTDIR)$(PREFIX) ./crit
+	$(Q) $(PYTHON) ./scripts/_pip.py install --prefix=$(DESTDIR)$(PREFIX) ./crit
 endif
 .PHONY: install
 
@@ -31,10 +31,10 @@ ifeq ($(PIP_BREAK_SYSTEM_PACKAGES),0)
 	$(E) " Consider using PIP_BREAK_SYSTEM_PACKAGES=1 make uninstall"
 else
 	$(E) " UNINSTALL" crit
-	$(Q) $(PYTHON) ./scripts/uninstall_module.py --prefix=$(DESTDIR)$(PREFIX) crit
+	$(Q) $(PYTHON) ./scripts/_pip.py uninstall --prefix=$(DESTDIR)$(PREFIX) crit
 endif
 else
 	$(E) " UNINSTALL" crit
-	$(Q) $(PYTHON) ./scripts/uninstall_module.py --prefix=$(DESTDIR)$(PREFIX) crit
+	$(Q) $(PYTHON) ./scripts/_pip.py uninstall --prefix=$(DESTDIR)$(PREFIX) crit
 endif
 .PHONY: uninstall

@@ -447,7 +447,7 @@ lint:
 	flake8 --config=scripts/flake8.cfg test/others/criu-ns/run.py
 	flake8 --config=scripts/flake8.cfg crit/*.py
 	flake8 --config=scripts/flake8.cfg crit/crit/*.py
-	flake8 --config=scripts/flake8.cfg scripts/uninstall_module.py
+	flake8 --config=scripts/flake8.cfg scripts/_pip.py
 	flake8 --config=scripts/flake8.cfg coredump/ coredump/coredump
 	flake8 --config=scripts/flake8.cfg scripts/github-indent-warnings.py
 	shellcheck --version

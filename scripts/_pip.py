@@ -57,9 +57,38 @@ def uninstall_module(package_name: str, prefix=None):
         print(f'Error uninstalling package {package_name}: {err}')
 
 
+def install_module(package_name: str, prefix=None):
+    """
+    When `pip install --upgrade` is used with --prefix, it will
+    not uninstall existing packages with the same name. To address
+    this issue, we need to update PYTHONPATH.
+    """
+    command = [sys.executable, '-m', 'pip', 'install', '-U']
+    if prefix:
+        add_site_dir(prefix)
+        command.extend(['--prefix', prefix])
+    command.append(package_name)
+    try:
+        subprocess.check_call(command, env=os.environ)
+    except subprocess.CalledProcessError as err:
+        print(f'Error installing package {package_name}: {err}')
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('module_name', help='The name of the module to uninstall')
-    parser.add_argument('--prefix', help='The prefix where the module was installed')
+    parser = argparse.ArgumentParser(description='Wrapper script for pip with support for --prefix')
+    subparsers = parser.add_subparsers(title='commands', dest='command')
+
+    # Install command
+    install_parser = subparsers.add_parser('install', help='Install a module')
+    install_parser.add_argument('module_name', help='The name of the module to install')
+    install_parser.add_argument('--prefix', help='The prefix where the module will be installed')
+    install_parser.set_defaults(func=install_module)
+
+    # Uninstall command
+    uninstall_parser = subparsers.add_parser('uninstall', help='Uninstall a module')
+    uninstall_parser.add_argument('module_name', help='The name of the module to uninstall')
+    uninstall_parser.add_argument('--prefix', help='The prefix where the module was installed')
+    uninstall_parser.set_defaults(func=uninstall_module)
+
     args = parser.parse_args()
-    uninstall_module(args.module_name, args.prefix)
+    args.func(args.module_name, args.prefix)

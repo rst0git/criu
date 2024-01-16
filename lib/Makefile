@@ -63,11 +63,11 @@ ifeq ($(PIP_BREAK_SYSTEM_PACKAGES),0)
 	$(E) "  Consider using PIP_BREAK_SYSTEM_PACKAGES=1 make install"
 else
 	$(E) "  INSTALL " pycriu
-	$(Q) $(PYTHON) -m pip install --upgrade --ignore-installed --prefix=$(DESTDIR)$(PREFIX) ./lib
+	$(Q) $(PYTHON) ./scripts/_pip.py install --prefix=$(DESTDIR)$(PREFIX) ./lib
 endif
 else
 	$(E) "  INSTALL " pycriu
-	$(Q) $(PYTHON) -m pip install --upgrade --ignore-installed --prefix=$(DESTDIR)$(PREFIX) ./lib
+	$(Q) $(PYTHON) ./scripts/_pip.py install --prefix=$(DESTDIR)$(PREFIX) ./lib
 endif
 .PHONY: install
 
@@ -86,10 +86,10 @@ ifeq ($(PIP_BREAK_SYSTEM_PACKAGES),0)
 	$(E) " Consider using PIP_BREAK_SYSTEM_PACKAGES=1 make uninstall"
 else
 	$(E) " UNINSTALL" pycriu
-	$(Q) $(PYTHON) ./scripts/uninstall_module.py --prefix=$(DESTDIR)$(PREFIX) pycriu
+	$(Q) $(PYTHON) ./scripts/_pip.py uninstall --prefix=$(DESTDIR)$(PREFIX) pycriu
 endif
 else
 	$(E) " UNINSTALL" pycriu
-	$(Q) $(PYTHON) ./scripts/uninstall_module.py --prefix=$(DESTDIR)$(PREFIX) pycriu
+	$(Q) $(PYTHON) ./scripts/_pip.py uninstall --prefix=$(DESTDIR)$(PREFIX) pycriu
 endif
 .PHONY: uninstall
