@@ -69,7 +69,8 @@ setup-vagrant:
 vagrant-fedora-no-vdso: setup-vagrant
 	./vagrant.sh fedora-no-vdso
 
-vagrant-fedora-rawhide: setup-vagrant
+vagrant-fedora-rawhide:
+	./vagrant.sh setup-rawhide
 	./vagrant.sh fedora-rawhide
 
 vagrant-fedora-non-root: setup-vagrant

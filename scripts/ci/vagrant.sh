@@ -10,6 +10,10 @@ VAGRANT_VERSION=2.3.7
 FEDORA_VERSION=38
 FEDORA_BOX_VERSION=38.20230413.1
 
+setup-rawhide() {
+	setup "generic/fedora-rawhide"
+}
+
 setup() {
 	if [ -n "$TRAVIS" ]; then
 		# Load the kvm modules for vagrant to use qemu
@@ -27,7 +31,13 @@ setup() {
 		openssh-client
 	systemctl restart libvirtd
 	vagrant plugin install vagrant-libvirt
-	vagrant init fedora/${FEDORA_VERSION}-cloud-base --box-version ${FEDORA_BOX_VERSION}
+
+	if [ -n "$1" ]; then
+		vagrant init "$1"
+	else
+		vagrant init fedora/${FEDORA_VERSION}-cloud-base --box-version ${FEDORA_BOX_VERSION}
+	fi
+
 	# The default libvirt Vagrant VM uses 512MB.
 	# Travis VMs should have around 7.5GB.
 	# Increasing it to 4GB should work.
@@ -74,7 +84,7 @@ fedora-rawhide() {
 	# In the container it is not possible to change the state of selinux.
 	# Let's just disable it for this test run completely.
 	ssh default 'sudo setenforce Permissive'
-	ssh default 'cd /vagrant; tar xf criu.tar; cd criu; sudo -E make -C scripts/ci fedora-rawhide CONTAINER_RUNTIME=podman BUILD_OPTIONS="--security-opt seccomp=unconfined"'
+	ssh default 'tar xf criu.tar; cd criu; sudo -E make -C scripts/ci fedora-rawhide CONTAINER_RUNTIME=podman BUILD_OPTIONS="--security-opt seccomp=unconfined"'
 }
 
 fedora-non-root() {
