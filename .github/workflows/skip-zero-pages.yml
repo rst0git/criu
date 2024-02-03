@@ -1,0 +1,17 @@
+name: Test Skip Zero Pages
+
+on: [push, pull_request]
+
+# Cancel any preceding run on the pull request.
+concurrency:
+  group: test-skip-zero-pages-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/criu-dev' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Run Skip Zero Pages Test
+      run: sudo -E make -C scripts/ci local ZERO_PAGES_TEST=1

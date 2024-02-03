@@ -60,6 +60,10 @@ ci_prep () {
 	chmod a+x "$HOME"
 }
 
+test_skip_zero_pages() {
+	./test/zdtm.py run --skip-zero-pages -p 2 --keep-going -a "${ZDTM_OPTS[@]}"
+}
+
 test_stream() {
 	# Testing CRIU streaming to criu-image-streamer
 
@@ -210,6 +214,11 @@ chmod 0777 test/zdtm/transition
 if [ "${STREAM_TEST}" = "1" ]; then
 	./scripts/install-criu-image-streamer.sh
 	test_stream
+	exit 0
+fi
+
+if [ "${ZERO_PAGES_TEST}" = "1" ]; then
+	test_skip_zero_pages
 	exit 0
 fi
 
