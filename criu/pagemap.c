@@ -28,6 +28,11 @@
 
 #define MAX_BUNCH_SIZE 256
 
+struct vaddr_array {
+	uint64_t vaddr;
+	unsigned long len;
+};
+
 /*
  * One "job" for the preadv() syscall in pagemap.c
  */
@@ -36,6 +41,17 @@ struct page_read_iov {
 	off_t end;	  /* the end of the read == sum to.iov_len -s */
 	struct iovec *to; /* destination iovs */
 	unsigned int nr;  /* their number */
+
+	/* We use the virtual address (vaddr) of memory pages to compute HMAC
+	 * when decrypting pages during restore and verify the integiry of page
+	 * data (see tls_block_cipher_decrypt_data() in tls.c). Each iovec may
+	 * contain multiple pages with different vaddr value. Thus, we keep an
+	 * array with both vaddr and length for nonsequential pages stored in iov.
+	 *
+	 * See pagemap_enqueue_iovec() and process_async_reads() for more details.
+	 */
+	struct vaddr_array vaddr_array[IOV_MAX];
+	unsigned int vaddr_array_size;
 
 	struct list_head l;
 };
@@ -266,11 +282,13 @@ static int read_local_page(struct page_read *pr, unsigned long vaddr, unsigned l
 
 	if (opts.encrypt) {
 		/* We need to make sure to read the full content of pages before decrypting the data */
+		tls_set_hmac_vma_metadata(pr->cvaddr);
 		for (int i = 0; i < len; i += PAGE_SIZE) {
 			if (tls_block_cipher_decrypt_data(buf + i, PAGE_SIZE)) {
 				pr_err("Failed to decrypt data\n");
 				return -1;
 			}
+			tls_increment_hmac_vma_metadata(PAGE_SIZE);
 		}
 	}
 
@@ -283,7 +301,7 @@ static int read_local_page(struct page_read *pr, unsigned long vaddr, unsigned l
 	return 0;
 }
 
-static int enqueue_async_iov(struct page_read *pr, void *buf, unsigned long len, struct list_head *to)
+static int enqueue_async_iov(struct page_read *pr, void *buf, unsigned long vaddr, unsigned long len, struct list_head *to)
 {
 	struct page_read_iov *pr_iov;
 	struct iovec *iov;
@@ -294,6 +312,10 @@ static int enqueue_async_iov(struct page_read *pr, void *buf, unsigned long len,
 
 	pr_iov->from = pr->pi_off;
 	pr_iov->end = pr->pi_off + len;
+
+	pr_iov->vaddr_array[0].vaddr = vaddr;
+	pr_iov->vaddr_array[0].len = len;
+	pr_iov->vaddr_array_size = 1;
 
 	iov = xzalloc(sizeof(*iov));
 	if (!iov) {
@@ -337,7 +359,7 @@ int pagemap_render_iovec(struct list_head *from, struct task_restore_args *ta)
 	return 0;
 }
 
-int pagemap_enqueue_iovec(struct page_read *pr, void *buf, unsigned long len, struct list_head *to)
+int pagemap_enqueue_iovec(struct page_read *pr, void *buf, unsigned long vaddr, unsigned long len, struct list_head *to)
 {
 	struct page_read_iov *cur_async = NULL;
 	struct iovec *iov;
@@ -352,7 +374,7 @@ int pagemap_enqueue_iovec(struct page_read *pr, void *buf, unsigned long len, st
 	 * Start the new preadv request here.
 	 */
 	if (!cur_async || pr->pi_off != cur_async->end)
-		return enqueue_async_iov(pr, buf, len, to);
+		return enqueue_async_iov(pr, buf, vaddr, len, to);
 
 	/*
 	 * This read is pure continuation of the previous one. Let's
@@ -366,7 +388,7 @@ int pagemap_enqueue_iovec(struct page_read *pr, void *buf, unsigned long len, st
 		unsigned int n_iovs = cur_async->nr + 1;
 
 		if (n_iovs >= IOV_MAX)
-			return enqueue_async_iov(pr, buf, len, to);
+			return enqueue_async_iov(pr, buf, vaddr, len, to);
 
 		iov = xrealloc(cur_async->to, n_iovs * sizeof(*iov));
 		if (!iov)
@@ -380,6 +402,20 @@ int pagemap_enqueue_iovec(struct page_read *pr, void *buf, unsigned long len, st
 		iov->iov_len = len;
 
 		cur_async->nr = n_iovs;
+	}
+
+	// Increament end of read (this is the sum of all IOV len-s)
+	// FIXME: here len is not what we need; it should be nr_pages * PAGE_SIZE
+	if (opts.encrypt) {
+		if (cur_async->vaddr_array[cur_async->vaddr_array_size - 1].vaddr == pr->pe->vaddr) {
+			/* Extend the last vaddr entry */
+			cur_async->vaddr_array[cur_async->vaddr_array_size - 1].len += len;
+		} else {
+			/* Add new vaddr entry */
+			cur_async->vaddr_array[cur_async->vaddr_array_size].vaddr = pr->pe->vaddr;
+			cur_async->vaddr_array[cur_async->vaddr_array_size].len = len;
+			cur_async->vaddr_array_size++;
+		}
 	}
 
 	cur_async->end += len;
@@ -647,11 +683,31 @@ static int process_async_reads(struct page_read *pr)
 
 		if (opts.encrypt) {
 			/* We need to make sure to read the full content of pages before decrypting the data */
+			int64_t idx = 0, len;
+
 			for (int i = 0; i < iovcnt; i++) {
-				for (int j = 0; j < iovs[i].iov_len; j += PAGE_SIZE) {
+
+				/* Set vma address used to compute HMAC value */
+				tls_set_hmac_vma_metadata(piov->vaddr_array[idx].vaddr);
+				len = piov->vaddr_array[idx].len;
+
+				for (size_t j = 0; j < iovs[i].iov_len; j += PAGE_SIZE) {
 					if (tls_block_cipher_decrypt_data(iovs[i].iov_base + j, PAGE_SIZE)) {
 						pr_err("Failed to decrypt data\n");
 						return -1;
+					}
+
+					len -= PAGE_SIZE;
+					BUG_ON(len < 0);
+
+					if (len > 0) {
+						/* Increment virtual address for next page */
+						tls_increment_hmac_vma_metadata(PAGE_SIZE);
+					} else {
+						/* Move to the next vaddr_array entry */
+						idx++;
+						len = piov->vaddr_array[idx].len;
+						tls_set_hmac_vma_metadata(piov->vaddr_array[idx].vaddr);
 					}
 				}
 			}

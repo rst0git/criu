@@ -24,4 +24,5 @@ message token_entries {
 message cipher_entry {
 	required token_entries tokens = 1;
 	required bytes	aes_iv	= 2;
+	required bytes	hmac_digest	= 4;
 }
