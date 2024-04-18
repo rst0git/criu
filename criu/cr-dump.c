@@ -2055,7 +2055,11 @@ static int cr_dump_finish(int ret)
 		 * Thus ask user via script if we're to break
 		 * checkpoint.
 		 */
+
+		timing_start(TIME_ACT_POST_DUMP);
 		post_dump_ret = run_scripts(ACT_POST_DUMP);
+		timing_stop(TIME_ACT_POST_DUMP);
+
 		if (post_dump_ret) {
 			post_dump_ret = WEXITSTATUS(post_dump_ret);
 			pr_info("Post dump script passed with %d\n", post_dump_ret);

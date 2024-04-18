@@ -25,6 +25,8 @@ message dump_stats_entry {
 
 	optional uint32			stream_cipher_encryption_time	= 15;
 	optional uint32			block_cipher_encryption_time	= 16;
+
+	optional uint32			act_post_dump_time	= 17;
 }
 
 message restore_stats_entry {

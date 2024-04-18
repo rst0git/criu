@@ -170,6 +170,9 @@ void write_stats(int what)
 		ds_entry.has_irmap_resolve = true;
 		encode_time(TIME_IRMAP_RESOLVE, &ds_entry.irmap_resolve);
 
+		ds_entry.has_act_post_dump_time= true;
+		encode_time(TIME_ACT_POST_DUMP, &ds_entry.act_post_dump_time);
+
 		if (opts.encrypt) {
 			ds_entry.has_stream_cipher_encryption_time = true;
 			encode_time(TIME_STREAM_CIPHER_ENCRYPTION, &ds_entry.stream_cipher_encryption_time);
