@@ -7,12 +7,12 @@
 
 #include <common/list.h>
 #include <compel/infect.h>
+#include <compel/ptrace.h>
 
 #include <ctype.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <sys/ptrace.h>
 #include <sys/wait.h>
 
 /* cuda-checkpoint binary should live in your PATH */
