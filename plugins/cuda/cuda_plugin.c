@@ -110,15 +110,20 @@ static int launch_cuda_checkpoint(const char **args, char *buf, int buf_size)
 
 	if (child_pid == 0) { // child
 		if (dup2(fd[WRITE], STDOUT_FILENO) == -1) {
-			return -1;
+			_exit(EXIT_FAILURE);
 		}
 		if (dup2(fd[WRITE], STDERR_FILENO) == -1) {
-			return -1;
+			_exit(EXIT_FAILURE);
 		}
 
 		close_fds(STDERR_FILENO + 1);
 
-		return execvp(args[0], (char **)args);
+		execvp(args[0], (char **)args);
+
+		/* We can't use pr_error() as log file fd is closed. */
+		fprintf(stderr, "execvp(\"%s\") failed: %s\n", args[0], strerror(errno));
+
+		_exit(EXIT_FAILURE);
 	} else { // parent
 		close(fd[WRITE]);
 
@@ -145,33 +150,41 @@ static int launch_cuda_checkpoint(const char **args, char *buf, int buf_size)
 		}
 
 		int status;
-		if (waitpid(child_pid, &status, 0) == -1 || !WIFEXITED(status)) {
-			pr_err("cuda-checkpoint exited improperly, couldn't complete operation\n");
-			close(fd[READ]);
-			return -1;
-		}
+		int exit_code = waitpid(child_pid, &status, 0);
+		if (exit_code == -1 || !WIFEXITED(status))
+			pr_err("cuda-checkpoint exited improperly\n");
+		else
+			exit_code = WEXITSTATUS(status);
+
+		if (exit_code != EXIT_SUCCESS || !WIFEXITED(status))
+			pr_debug("%s\n", buf);
 
 		close(fd[READ]);
 
-		return WEXITSTATUS(status);
+		return exit_code;
 	}
 }
 
-static bool cuda_checkpoint_supports_flag(const char *flag)
+/**
+ * Checks if a given flag is supported by the cuda-checkpoint utility
+ *
+ * Returns:
+ *  1 if the flag is supported,
+ *  0 if the flag is not supported,
+ *  -1 if there was an error launching the cuda-checkpoint utility.
+ */
+static int cuda_checkpoint_supports_flag(const char *flag)
 {
 	char msg_buf[2048];
 	const char *args[] = { CUDA_CHECKPOINT, "-h", NULL };
-	int ret = launch_cuda_checkpoint(args, msg_buf, sizeof(msg_buf));
-	if (ret != 0) {
-		pr_err("Failed to launch cuda-checkpoint utility, check that the utility is present in your $PATH\n");
-		return false;
-	}
 
-	if (strstr(msg_buf, flag) == NULL) {
-		return false;
-	}
+	if (launch_cuda_checkpoint(args, msg_buf, sizeof(msg_buf)) != 0)
+		return -1;
 
-	return true;
+	if (strstr(msg_buf, flag) == NULL)
+		return 0;
+
+	return 1;
 }
 
 /* Retrieve the cuda restore thread TID from the root pid */
@@ -419,7 +432,15 @@ CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__RESUME_DEVICES_LATE, cuda_plugin_resume_
 
 int cuda_plugin_init(int stage)
 {
-	if (!cuda_checkpoint_supports_flag("--action")) {
+	int ret = cuda_checkpoint_supports_flag("--action");
+
+	if (ret == -1) {
+		pr_warn("check that %s is present in $PATH\n", CUDA_CHECKPOINT);
+		plugin_disabled = true;
+		return 0;
+	}
+
+	if (ret == 0) {
 		pr_warn("cuda-checkpoint --action flag not supported, an r555 or higher version driver is required. Disabling CUDA plugin\n");
 		plugin_disabled = true;
 		return 0;
