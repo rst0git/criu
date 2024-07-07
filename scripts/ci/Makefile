@@ -57,9 +57,6 @@ fedora-asan:
 docker-test:
 	./docker-test.sh
 
-podman-test:
-	./podman-test.sh
-
 java-test:
 	./java-test.sh
 

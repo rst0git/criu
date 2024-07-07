@@ -1,21 +1,15 @@
 #!/bin/bash
 set -x -e -o pipefail
 
-export SKIP_CI_TEST=1
-
-./run-ci-tests.sh
-
-cd ../../
-
-make install PREFIX=/usr
-
 criu --version
 
 # FIXME: Disable checkpoint/restore of cgroups
 # https://github.com/checkpoint-restore/criu/issues/2091
 mkdir -p /etc/criu
 echo "manage-cgroups ignore" > /etc/criu/runc.conf
-sed -i 's/#runtime\s*=\s*.*/runtime = "runc"/' /usr/share/containers/containers.conf
+
+mkdir -p /etc/containers/containers.conf.d
+echo -e "[engine]\nruntime = \"runc\"" > /etc/containers/containers.conf.d/containers.conf
 
 # Test checkpoint/restore with action script
 echo "action-script /usr/bin/true" | sudo tee /etc/criu/default.conf

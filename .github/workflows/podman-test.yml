@@ -9,8 +9,28 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    # This job runs in a Fedora container which runs on an Ubuntu VM.
+    runs-on: ubuntu-latest
+    container:
+      image: registry.fedoraproject.org/fedora:latest
+      options: --privileged --cgroupns="host"
+      volumes:
+        - /lib/modules:/lib/modules
+        - /var/lib/containers:/var/lib/containers
+
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install dependencies (Fedora Linux)
+      run: |
+        ./scripts/ci/prepare-for-fedora-rawhide.sh
+        sudo dnf install -y podman runc
+        sudo dnf remove -y --noautoremove criu criu-libs criu-devel
+
+    - name: Build criu
+      run: |
+        make -j $(nproc)
+        sudo make install PREFIX=/usr
+
     - name: Run Podman Test
-      run: sudo make -C scripts/ci podman-test
+      run: sudo ./scripts/ci/podman-test.sh
