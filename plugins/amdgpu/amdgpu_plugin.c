@@ -1233,8 +1233,8 @@ int amdgpu_plugin_dump_file(int fd, int id)
 		goto exit;
 	}
 
-	pr_info("devices:%d bos:%d objects:%d priv_data:%lld\n", args.num_devices, args.num_bos, args.num_objects,
-		args.priv_data_size);
+	pr_info("devices:%u bos:%u objects:%u priv_data:%llu\n",
+		args.num_devices, args.num_bos, args.num_objects, (unsigned long long)args.priv_data_size);
 
 	e = xmalloc(sizeof(*e));
 	if (!e) {
