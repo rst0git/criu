@@ -11,6 +11,7 @@
 #include "bfd.h"
 #include "log.h"
 #include "common/bug.h"
+#include "common/list.h"
 
 #define PAGE_RSS  1
 #define PAGE_ANON 2
@@ -176,5 +177,9 @@ extern int read_img_buf(struct cr_img *, void *ptr, int size);
 extern int read_img_str(struct cr_img *, char **pstr, int size);
 
 extern void close_image(struct cr_img *);
+
+extern int add_inventory_plugin(const char *name);
+extern int inventory_check_and_remove_plugin(const char *name, size_t n);
+extern int check_inventory_plugins(void);
 
 #endif /* __CR_IMAGE_H__ */
