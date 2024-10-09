@@ -27,6 +27,7 @@ struct dead_pidfd {
 	unsigned int ino;
 	int pid;
 	size_t count;
+	sigset_t oldmask;
 	mutex_t pidfd_lock;
 	struct hlist_node hash;
 };
@@ -158,6 +159,8 @@ static int free_dead_pidfd(struct dead_pidfd *dead)
 		goto err;
 	}
 
+	sigprocmask(SIG_SETMASK, &dead->oldmask, NULL);
+
 	if (!WIFSIGNALED(status)) {
 		pr_err("Expected temporary process to be terminated by a signal\n");
 		goto err;
@@ -180,6 +183,7 @@ static int open_one_pidfd(struct file_desc *d, int *new_fd)
 {
 	struct pidfd_info *info;
 	struct dead_pidfd *dead = NULL;
+	sigset_t blockmask;
 	int pidfd;
 
 	info = container_of(d, struct pidfd_info, d);
@@ -199,6 +203,11 @@ static int open_one_pidfd(struct file_desc *d, int *new_fd)
 	BUG_ON(dead->count == 0);
 	dead->count--;
 	if (dead->pid == -1) {
+
+		sigemptyset(&blockmask);
+		sigaddset(&blockmask, SIGCHLD);
+		sigprocmask(SIG_BLOCK, &blockmask, &dead->oldmask);
+
 		dead->pid = create_tmp_process();
 		if (dead->pid < 0) {
 			mutex_unlock(&dead->pidfd_lock);
@@ -270,6 +279,9 @@ static int collect_one_pidfd(void *obj, ProtobufCMessage *msg, struct cr_img *i)
 	dead->ino = info->pidfe->ino;
 	dead->count = 1;
 	dead->pid = -1;
+
+	sigemptyset(&dead->oldmask);
+
 	mutex_init(&dead->pidfd_lock);
 
 	mutex_lock(dead_pidfd_hash_lock);
