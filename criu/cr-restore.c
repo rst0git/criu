@@ -80,6 +80,7 @@
 #include "bpfmap.h"
 #include "apparmor.h"
 #include "pidfd.h"
+#include "tls.h"
 
 #include "parasite-syscall.h"
 #include "files-reg.h"
@@ -2353,6 +2354,10 @@ int cr_restore_tasks(void)
 
 	if (init_service_fd())
 		return 1;
+
+	/* Initialize decryption key before loading any images */
+	if (tls_initialize_cipher_from_image())
+		goto err;
 
 	if (check_img_inventory(/* restore = */ true) < 0)
 		goto err;

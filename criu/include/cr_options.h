@@ -213,6 +213,9 @@ struct cr_options {
 	/* This enables compression of memory pages. */
 	int pages_compression;
 
+	/* This enables encryption for CRIU images. */
+	int encrypt;
+
 	/* This stores which method to use for file validation. */
 	int file_validation_method;
 

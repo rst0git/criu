@@ -550,6 +550,9 @@ usage:
 #ifdef CONFIG_LZ4
 	       "  -c|--compress         compress memory pages\n"
 #endif
+#ifdef CONFIG_GNUTLS
+	       "  -e|--encrypt          encrypt the contents of images\n"
+#endif
 	       "\n"
 	       "Page/Service server options:\n"
 	       "  --address ADDR        address of server or service\n"

@@ -617,7 +617,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		"no-" OPT_NAME, no_argument, SAVE_TO, false \
 	}
 
-	static const char short_opts[] = "dSscRt:hD:o:v::x::Vr:jJ:lW:L:M:k:";
+	static const char short_opts[] = "dSsecRt:hD:o:v::x::Vr:jJ:lW:L:M:";
 	static struct option long_opts[] = {
 		{ "tree", required_argument, 0, 't' },
 		{ "leave-stopped", no_argument, 0, 's' },
@@ -704,6 +704,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		BOOL_OPT("unprivileged", &opts.unprivileged),
 		BOOL_OPT("ghost-fiemap", &opts.ghost_fiemap),
 		{ "compress", no_argument, 0, 'c' },
+		{ "encrypt", no_argument, 0, 'e' },
 		{},
 	};
 
@@ -815,6 +816,10 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 			break;
 		case 'c': {
 			opts.pages_compression = true;
+			break;
+		}
+		case 'e': {
+			opts.encrypt = true;
 			break;
 		}
 		case 1043: {
@@ -1115,7 +1120,7 @@ int check_options(void)
 	}
 
 #ifndef CONFIG_GNUTLS
-	if (opts.tls) {
+	if (opts.tls || opts.encrypt) {
 		pr_err("CRIU was built without TLS support\n");
 		return 1;
 	}
