@@ -627,3 +627,44 @@ void cuda_plugin_fini(int stage, int ret)
 	}
 }
 CR_PLUGIN_REGISTER("cuda_plugin", cuda_plugin_init, cuda_plugin_fini)
+
+/**
+ * Applications that use NVML will leave some leftover device references as
+ * NVML is not currently supported for checkpointing. In most cases, NVML is
+ * used during intialization to get information such as gpu count and
+ * capabilities. These values are unlikely to change during runtime and
+ * typically not accessed again.
+ *
+ * To enable checkpoint/restore with drivers that do not have support for
+ * checkpointing of applications that use NVML, we handle remaining references
+ * to /dev/nvidiactl and /dev/nvidia{0..N} using the {DUMP,RESTORE}_EXT_FILE hooks.
+ */
+int cuda_plugin_dump_file(int fd, int id)
+{
+	pr_debug("cuda_plugin_dump_file: fd: %d id: %d\n", fd, id);
+	return 0;
+}
+CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__DUMP_EXT_FILE, cuda_plugin_dump_file)
+
+int cuda_plugin_restore_file(int id)
+{
+	pr_debug("cuda_plugin_restore_file: id: %d\n", id);
+	return open("/dev/null", O_RDWR);
+}
+CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__RESTORE_EXT_FILE, cuda_plugin_restore_file)
+
+int cuda_plugin_handle_device_vma(int fd, const struct stat *st_buf)
+{
+	pr_debug("cuda_plugin_handle_device_vma: fd: %d major: %d minor:%d\n",
+		 fd, minor(st_buf->st_rdev), major(st_buf->st_rdev));
+
+	return 0;
+}
+CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__HANDLE_DEVICE_VMA, cuda_plugin_handle_device_vma)
+
+int cuda_plugin_update_vmamap(const char *in_path, const uint64_t addr, const uint64_t old_offset,
+			      uint64_t *new_offset, int *updated_fd)
+{
+	return 0;
+}
+CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__UPDATE_VMA_MAP, cuda_plugin_update_vmamap)
