@@ -11,6 +11,7 @@ int main(int argc, char *argv[])
 		int option_index = 0;
 		static struct option long_options[] = {
 			{ "pid", required_argument, 0, 'p' },
+			{ "get-state", required_argument, 0, NULL },
 			{ "get-restore-tid", no_argument, 0, 'g' },
 			{ "action", required_argument, 0, 'a' },
 			{ "timeout", required_argument, 0, 't' },
