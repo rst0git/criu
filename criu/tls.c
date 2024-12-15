@@ -19,6 +19,7 @@
 #include "protobuf.h"
 #include "cr_options.h"
 #include "xmalloc.h"
+#include "stats.h"
 #include "tls.h"
 
 /* Compatibility with GnuTLS version < 3.5 */
@@ -1221,7 +1222,7 @@ cleanup:
  */
 int tls_encrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *nonce_data)
 {
-	int ret;
+	int ret, exit_code = -1;
 	giovec_t iov[1];
 	gnutls_datum_t key;
 	static gnutls_aead_cipher_hd_t handle = NULL;
@@ -1231,6 +1232,8 @@ int tls_encrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *n
 	if (!opts.encrypt)
 		return -1;
 
+	timing_start(TIME_STREAM_CIPHER_ENCRYPTION);
+
 	if (handle == NULL) {
 		key.data = token;
 		key.size = gnutls_cipher_get_key_size(stream_cipher_algorithm);
@@ -1238,7 +1241,7 @@ int tls_encrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *n
 		ret = gnutls_aead_cipher_init(&handle, stream_cipher_algorithm, &key);
 		if (ret < 0) {
 			tls_perror("Failed to initialize cipher", ret);
-			return -1;
+			goto err;
 		}
 	}
 
@@ -1249,7 +1252,7 @@ int tls_encrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *n
 	ret = gnutls_rnd(GNUTLS_RND_NONCE, nonce_data, nonce_len);
 	if (ret < 0) {
 		tls_perror("Failed to generate random nonce", ret);
-		return -1;
+		goto err;
 	}
 
 	iov[0].iov_base = data;
@@ -1258,10 +1261,13 @@ int tls_encrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *n
 	ret = gnutls_aead_cipher_encryptv2(handle, nonce_data, nonce_len, NULL, 0, iov, 1, tag_data, &tag_size);
 	if (ret < 0) {
 		tls_perror("Failed to encrypt data", ret);
-		return -1;
+		goto err;
 	}
 
-	return 0;
+	exit_code = 0;
+err:
+	timing_stop(TIME_STREAM_CIPHER_ENCRYPTION);
+	return exit_code;
 }
 
 /**
@@ -1271,7 +1277,7 @@ int tls_encrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *n
  */
 int tls_decrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *nonce_data)
 {
-	int ret;
+	int ret, exit_code = -1;
 	giovec_t iov[1];
 	gnutls_datum_t key;
 	gnutls_aead_cipher_hd_t handle = NULL;
@@ -1281,10 +1287,12 @@ int tls_decrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *n
 	key.data = token;
 	key.size = gnutls_cipher_get_key_size(stream_cipher_algorithm);
 
+	timing_start(TIME_STREAM_CIPHER_DECRYPTION);
+
 	ret = gnutls_aead_cipher_init(&handle, stream_cipher_algorithm, &key);
 	if (ret < 0) {
 		tls_perror("Failed to initialize cipher", ret);
-		return -1;
+		goto err;
 	}
 
 	iov[0].iov_base = data;
@@ -1293,12 +1301,14 @@ int tls_decrypt_data(void *data, size_t data_size, uint8_t *tag_data, uint8_t *n
 	ret = gnutls_aead_cipher_decryptv2(handle, nonce_data, nonce_len, NULL, 0, iov, 1, tag_data, tag_size);
 	if (ret < 0) {
 		tls_perror("Failed to decrypt data", ret);
-		return -1;
+		goto err;
 	}
 
+	exit_code = ret;
 	gnutls_aead_cipher_deinit(handle);
-
-	return ret;
+err:
+	timing_stop(TIME_STREAM_CIPHER_DECRYPTION);
+	return exit_code;
 }
 
 /**
@@ -1578,19 +1588,21 @@ static inline void hmac_xor(uint8_t *dest, const uint8_t *src, size_t n)
 
 int tls_block_cipher_encrypt_data(void *ptext, size_t ptext_len)
 {
-	int ret;
+	int ret, exit_code = -1;
 	uint8_t digest[HMAC_SIZE];
+
+	timing_start(TIME_BLOCK_CIPHER_ENCRYPTION);
 
 	ret = gnutls_cipher_encrypt2(block_cipher_handle, ptext, ptext_len, (void *)ptext, ptext_len);
 	if (ret < 0) {
 		tls_perror("Failed to encrypt data", ret);
-		return -1;
+		goto err;
 	}
 
 	ret = gnutls_hmac(hmac_ctx, ptext, ptext_len);
 	if (ret < 0) {
 		tls_perror("Failed to compute HMAC", ret);
-		return -1;
+		goto err;
 	}
 
 	ret = gnutls_hmac(hmac_ctx, &(hmac_metadata.vma_vaddr), sizeof(uint64_t));
@@ -1608,15 +1620,20 @@ int tls_block_cipher_encrypt_data(void *ptext, size_t ptext_len)
 	gnutls_hmac_output(hmac_ctx, digest);
 	hmac_xor(checkpoint_hmac_digest, digest, sizeof(digest));
 
-	return 0;
+	exit_code = 0;
+err:
+	timing_stop(TIME_BLOCK_CIPHER_ENCRYPTION);
+	return exit_code;
 }
 
 int tls_block_cipher_decrypt_data(void *ctext, size_t ctext_len)
 {
-	int ret;
+	int ret, exit_code = -1;
 	uint8_t digest[HMAC_SIZE];
 
+	timing_start(TIME_BLOCK_CIPHER_DECRYPTION);
 	ret = gnutls_hmac(hmac_ctx, ctext, ctext_len);
+
 	if (ret < 0) {
 		tls_perror("Failed to compute HMAC", ret);
 		return -1;
@@ -1640,9 +1657,13 @@ int tls_block_cipher_decrypt_data(void *ctext, size_t ctext_len)
 	ret = gnutls_cipher_decrypt2(block_cipher_handle, ctext, ctext_len, (void *)ctext, ctext_len);
 	if (ret < 0) {
 		tls_perror("Failed to decrypt data", ret);
-		return -1;
+		goto err;
 	}
-	return 0;
+
+	exit_code = 0;
+err:
+	timing_stop(TIME_BLOCK_CIPHER_DECRYPTION);
+	return exit_code;
 }
 
 /**
