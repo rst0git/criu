@@ -144,3 +144,13 @@ int check_mount_v2(void)
 }
 
 char compel_run_id[RUN_ID_HASH_LENGTH];
+
+int tls_encryption_pipe(int output_fd)
+{
+	return -1;
+}
+
+int tls_decryption_pipe(int intput_fd)
+{
+	return -1;
+}
