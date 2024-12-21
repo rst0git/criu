@@ -1963,6 +1963,9 @@ int cr_pre_dump_tasks(pid_t pid)
 	if (collect_pstree())
 		goto err;
 
+	if (checkpoint_devices())
+		goto err;
+
 	if (collect_pstree_ids_predump())
 		goto err;
 
@@ -2190,6 +2193,9 @@ int cr_dump_tasks(pid_t pid)
 	 */
 
 	if (collect_pstree())
+		goto err;
+
+	if (checkpoint_devices())
 		goto err;
 
 	if (collect_pstree_ids())
