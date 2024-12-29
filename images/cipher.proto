@@ -2,6 +2,24 @@
 
 syntax = "proto2";
 
+/**
+ * The content of CRIU images is encrypted with a random symmetric key
+ * using ChaCha20-Poly1305. The symmetric key is then encrypted with
+ * one or more public keys. A unique ID associated with each public key
+ * and the encrypted ciphertext (token) are stored in cipher.img.
+ *
+ * During restore, if cipher.img exists, we assume that the CRIU
+ * images are encrypted.
+ */
+message key_entry {
+	required string key_id = 1;
+	required bytes chacha20_poly1305_key = 2;
+}
+
+message token_entries {
+	repeated key_entry key_entries = 1;
+}
+
 message cipher_entry {
-	required bytes	token	= 1;
+	optional token_entries tokens = 1;
 }

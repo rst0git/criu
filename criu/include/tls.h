@@ -1,11 +1,21 @@
 #ifndef __CR_TLS_H__
 #define __CR_TLS_H__
 
+#include "common/list.h"
+
 /* 96-bits nonce and 128-bits tag for ChaCha20-Poly1305 */
 typedef struct {
 	uint8_t tag[16];
 	uint8_t nonce[12];
 } chacha20_poly1305_t;
+
+typedef struct {
+	char *file_path;
+	char *key_id;
+	struct list_head list;
+} key_map_t;
+
+int add_key_map(const char *key_id, const char *file_path);
 
 #ifdef CONFIG_GNUTLS
 

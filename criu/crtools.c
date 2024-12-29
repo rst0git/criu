@@ -552,6 +552,8 @@ usage:
 #endif
 #ifdef CONFIG_GNUTLS
 	       "  -e|--encrypt          encrypt the contents of images\n"
+	       "  -k|--key-map ID:FILE  specifies certificate file(s) to be used for encryption\n"
+	       "                        or private key for decryption\n"
 #endif
 	       "\n"
 	       "Page/Service server options:\n"

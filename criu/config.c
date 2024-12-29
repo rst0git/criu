@@ -27,6 +27,7 @@
 #include "sockets.h"
 #include "tty.h"
 #include "version.h"
+#include "tls.h"
 
 #include "common/xmalloc.h"
 
@@ -592,6 +593,58 @@ Esyntax:
 	return -1;
 }
 
+static bool validate_key_id(const char *key_id)
+{
+	if (!key_id)
+		return false;
+
+	for (const char *p = key_id; *p != '\0'; ++p) {
+		if (!isalnum((unsigned char)*p) && *p != '-' && *p != '_') {
+			/* Invalid character found */
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static bool validate_file_path(const char *file_path)
+{
+	struct stat file_stat;
+
+	if (file_path == NULL)
+		return false;
+
+	if (strlen(file_path) == 0)
+		return false;
+
+	if (strlen(file_path) >= PATH_MAX)
+		return false;
+
+	if (access(file_path, F_OK) != 0)
+		return false;
+
+	if (stat(file_path, &file_stat) != 0 || !S_ISREG(file_stat.st_mode))
+		return false;
+
+	return true;
+}
+
+static int parse_key_map(const char *key_id, const char *file_path)
+{
+	if (!validate_key_id(key_id)) {
+		pr_err("Invalid key ID: only alphanumeric characters, hyphens, and underscores are allowed.\n");
+		return -1;
+	}
+
+	if (!validate_file_path(file_path)) {
+		pr_err("Invalid key path\n");
+		return -1;
+	}
+
+	return add_key_map(key_id, file_path);
+}
+
 /*
  * parse_options() is the point where the getopt parsing happens. The CLI
  * parsing as well as the configuration file parsing happens here.
@@ -617,7 +670,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		"no-" OPT_NAME, no_argument, SAVE_TO, false \
 	}
 
-	static const char short_opts[] = "dSsecRt:hD:o:v::x::Vr:jJ:lW:L:M:";
+	static const char short_opts[] = "dSsecRt:hD:o:v::x::Vr:jJ:lW:L:M:k:";
 	static struct option long_opts[] = {
 		{ "tree", required_argument, 0, 't' },
 		{ "leave-stopped", no_argument, 0, 's' },
@@ -705,6 +758,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		BOOL_OPT("ghost-fiemap", &opts.ghost_fiemap),
 		{ "compress", no_argument, 0, 'c' },
 		{ "encrypt", no_argument, 0, 'e' },
+		{ "key-map", required_argument, 0, 'k' },
 		{},
 	};
 
@@ -820,6 +874,20 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		}
 		case 'e': {
 			opts.encrypt = true;
+			break;
+		}
+		case 'k': {
+			char *aux;
+			aux = strchr(optarg, ':');
+			if (aux == NULL)
+				goto bad_arg;
+
+			*aux = '\0';
+			if (parse_key_map(optarg, aux + 1)) {
+				pr_err("Could not add key when initializing config: %s, %s\n",
+					optarg, aux + 1);
+				return 1;
+			}
 			break;
 		}
 		case 1043: {

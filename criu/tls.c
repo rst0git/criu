@@ -15,6 +15,7 @@
 #include "protobuf.h"
 #include "cr_options.h"
 #include "xmalloc.h"
+#include "tls.h"
 
 /* Compatibility with GnuTLS version < 3.5 */
 #ifndef GNUTLS_E_CERTIFICATE_VERIFICATION_ERROR
@@ -44,13 +45,43 @@ static inline void _cleanup_gnutls_datum(gnutls_datum_t *p)
 
 static gnutls_session_t session;
 static gnutls_certificate_credentials_t x509_cred;
-static gnutls_pubkey_t pubkey;
 static int tls_sk = -1;
 static int tls_sk_flags = 0;
 
 /* 256-bits key for ChaCha20-Poly1305 */
 static uint8_t token[32];
 static const gnutls_cipher_algorithm_t stream_cipher_algorithm = GNUTLS_CIPHER_CHACHA20_POLY1305;
+
+static LIST_HEAD(key_map_list);
+static unsigned int n_key_map_entries;
+
+int add_key_map(const char *key_id, const char *file_path)
+{
+	key_map_t *new_key;
+
+	new_key = xmalloc(sizeof(*new_key));
+	if (!new_key)
+		return -1;
+
+
+	new_key->key_id = xstrdup(key_id);
+	if (!new_key->key_id) {
+		xfree(new_key);
+		return -1;
+	}
+
+	new_key->file_path = xstrdup(file_path);
+	if (!new_key->file_path) {
+		xfree(new_key->key_id);
+		xfree(new_key);
+		return -1;
+	}
+
+	n_key_map_entries++;
+	pr_debug("Adding key map: %s:%s\n", key_id, file_path);
+	list_add_tail(&new_key->list, &key_map_list);
+	return 0;
+}
 
 void tls_terminate_session(bool async)
 {
@@ -423,67 +454,22 @@ err:
 	return -1;
 }
 
-static inline int _tls_generate_token(void)
-{
-	return gnutls_rnd(GNUTLS_RND_KEY, &token, sizeof(token));
-}
-
 /**
- * tls_initialize_cipher initializes GnuTLS, loads a public key,
- * and initializes a cipher context that is used to encrypt the
- * content of images during dump and pre-dump.
+ * tls_initialize_cipher initializes GnuTLS initializes a cipher context
+ * that is used to encrypt the content of images during dump and pre-dump.
  */
 int tls_initialize_cipher(void)
 {
 	int ret;
-	char *cert_file_path = CRIU_CERT;
-	gnutls_x509_crt_t crt;
-	cleanup_gnutls_datum gnutls_datum_t cert_data = { NULL, 0 };
 
 	if (!opts.encrypt)
 		return 0;
 
-	if (opts.tls_cert)
-		cert_file_path = opts.tls_cert;
-
-	pr_debug("Loading public key from %s\n", cert_file_path);
-	ret = gnutls_load_file(cert_file_path, &cert_data);
-	if (ret < 0) {
-		tls_perror("Failed to load certificate file", ret);
-		return -1;
-	}
-
-	ret = gnutls_pubkey_init(&pubkey);
-	if (ret < 0) {
-		tls_perror("Failed to initialize public key", ret);
-		return -1;
-	}
-
-	ret = gnutls_x509_crt_init(&crt);
-	if (ret < 0) {
-		tls_perror("Failed to initialize X.509 certificate structure", ret);
-		return -1;
-	}
-
-	ret = gnutls_x509_crt_import(crt, &cert_data, GNUTLS_X509_FMT_PEM);
-	if (ret < 0) {
-		tls_perror("Failed to import certificate", ret);
-		return -1;
-	}
-
-	ret = gnutls_pubkey_import_x509(pubkey, crt, 0);
-	if (ret < 0) {
-		tls_perror("Failed to load public key", ret);
-		return -1;
-	}
-
-	ret = _tls_generate_token();
+	ret = gnutls_rnd(GNUTLS_RND_KEY, &token, sizeof(token));
 	if (ret < 0) {
 		tls_perror("Failed to generate token", ret);
 		return -1;
 	}
-
-	gnutls_x509_crt_deinit(crt);
 
 	return 0;
 }
@@ -587,10 +573,24 @@ err:
 	return NULL;
 }
 
+static inline bool is_default_key_entry(KeyEntry *key_entry)
+{
+	return key_entry->key_id[0] == 0;
+}
+
+
 /**
- * tls_initialize_cipher_from_image loads a private key and
- * decrypts the token from the cipher.img that is then used
- * to decrypt all other images.
+ * tls_initialize_cipher_from_image loads a private key and decrypts
+ * the token from the cipher.img that is then used to decrypt all
+ * other images.
+ *
+ * For each key specified with `--key-map`, check if the ID exists in
+ * cipher.img. The first ID match is used to decrypt the images. If no
+ * `--key-map` values have been specified, or none of the specified
+ * values matches the IDs in cipher.img, check if a default key (NULL
+ * key ID) exists in cipher.img. If default key is present, check if
+ * default *private key* (CRIU_KEY) file exists. If no private key exists,
+ * or decryption fails, exit with an error.
  */
 int tls_initialize_cipher_from_image(void)
 {
@@ -598,10 +598,14 @@ int tls_initialize_cipher_from_image(void)
 	char *privkey_file_path = CRIU_KEY;
 	struct cr_img *img;
 	CipherEntry *ce;
+	key_map_t *key;
+	bool key_found = false;
+	bool default_key_found = false;
 
 	gnutls_privkey_t privkey;
 	gnutls_x509_privkey_t x509_key;
 	gnutls_datum_t ciphertext;
+	gnutls_datum_t default_ciphertext;
 	gnutls_datum_t decrypted_token;
 
 	img = open_image(CR_FD_CIPHER, O_RSTR);
@@ -614,27 +618,9 @@ int tls_initialize_cipher_from_image(void)
 		opts.encrypt = false;
 		return 0;
 	}
+
+	/* opts.encrypt indicates that CRIU restores from encrypted images. */
 	opts.encrypt = true;
-
-	if (opts.tls_key)
-		privkey_file_path = opts.tls_key;
-
-	pr_debug("Loading private key from %s\n", privkey_file_path);
-	x509_key = rsa_load_pem_key(privkey_file_path);
-	if (!x509_key)
-		return -1;
-
-	ret = gnutls_privkey_init(&privkey);
-	if (ret < 0) {
-		tls_perror("Failed to initialize private key", ret);
-		return -1;
-	}
-
-	ret = gnutls_privkey_import_x509(privkey, x509_key, 0);
-	if (ret < 0) {
-		tls_perror("Failed to import private key", ret);
-		return -1;
-	}
 
 	ret = pb_read_one(img, &ce, PB_CIPHER);
 	if (ret < 0) {
@@ -642,23 +628,113 @@ int tls_initialize_cipher_from_image(void)
 		goto out_close;
 	}
 
-	ciphertext.data = ce->token.data;
-	ciphertext.size = ce->token.len;
-
-	ret = gnutls_privkey_decrypt_data(privkey, 0, &ciphertext, &decrypted_token);
-	if (ret < 0) {
-		tls_perror("Failed to decrypt token data", ret);
+	if (ce->tokens->n_key_entries == 0) {
+		pr_warn("No key entries found in cipher image\n");
 		goto out_close;
 	}
 
-	if (decrypted_token.size != sizeof(token)) {
-		pr_err("Invalid token size (%d != %lu)\n", decrypted_token.size, sizeof(token));
-		goto out_close;
+	for (int i = 0; i < ce->tokens->n_key_entries; i++) {
+		if (is_default_key_entry(ce->tokens->key_entries[i])) {
+			default_ciphertext.size = ce->tokens->key_entries[i]->chacha20_poly1305_key.len;
+			default_ciphertext.data = ce->tokens->key_entries[i]->chacha20_poly1305_key.data;
+			default_key_found = true;
+			continue;
+		}
+
+		if (n_key_map_entries == 0)
+			continue;
+
+		list_for_each_entry(key, &key_map_list, list) {
+
+			if (key->key_id != ce->tokens->key_entries[i]->key_id)
+				continue;
+
+			pr_debug("Loading private key from %s\n", key->file_path);
+			x509_key = rsa_load_pem_key(key->file_path);
+			if (!x509_key) {
+				pr_err("Failed to load private key\n");
+				return -1;
+			}
+
+			ret = gnutls_privkey_init(&privkey);
+			if (ret < 0) {
+				tls_perror("Failed to initialize private key", ret);
+				return -1;
+			}
+
+			ret = gnutls_privkey_import_x509(privkey, x509_key, 0);
+			if (ret < 0) {
+				tls_perror("Failed to import private key", ret);
+				return -1;
+			}
+
+			ciphertext.size = ce->tokens->key_entries[i]->chacha20_poly1305_key.len;
+			ciphertext.data = ce->tokens->key_entries[i]->chacha20_poly1305_key.data;
+
+			ret = gnutls_privkey_decrypt_data(privkey, 0, &ciphertext, &decrypted_token);
+			if (ret < 0) {
+				tls_perror("Failed to decrypt token data", ret);
+				goto out_close;
+			}
+
+			if (decrypted_token.size != sizeof(token)) {
+				pr_err("Invalid token size (%d != %lu)\n", decrypted_token.size, sizeof(token));
+				goto out_close;
+			}
+
+			if (memcpy(token, decrypted_token.data, sizeof(token)) != token) {
+				pr_perror("Failed to copy token data");
+				goto out_close;
+			}
+			key_found = true;
+			break;
+		}
+
+		if (key_found)
+			break;
 	}
 
-	if (memcpy(token, decrypted_token.data, sizeof(token)) != token) {
-		pr_perror("Failed to copy token data");
-		goto out_close;
+	if (!key_found) {
+		if (!default_key_found) {
+			pr_err("cipher.img does not contain default key entry\n");
+			return -1;
+		}
+
+		if (opts.tls_key)
+			privkey_file_path = opts.tls_key;
+
+		pr_debug("Loading private key from %s\n", privkey_file_path);
+		x509_key = rsa_load_pem_key(privkey_file_path);
+		if (!x509_key)
+			return -1;
+
+		ret = gnutls_privkey_init(&privkey);
+		if (ret < 0) {
+			tls_perror("Failed to initialize private key", ret);
+			return -1;
+		}
+
+		ret = gnutls_privkey_import_x509(privkey, x509_key, 0);
+		if (ret < 0) {
+			tls_perror("Failed to import private key", ret);
+			return -1;
+		}
+
+		ret = gnutls_privkey_decrypt_data(privkey, 0, &default_ciphertext, &decrypted_token);
+		if (ret < 0) {
+			tls_perror("Failed to decrypt token data", ret);
+			goto out_close;
+		}
+
+		if (decrypted_token.size != sizeof(token)) {
+			pr_err("Invalid token size (%d != %lu)\n", decrypted_token.size, sizeof(token));
+			goto out_close;
+		}
+
+		if (memcpy(token, decrypted_token.data, sizeof(token)) != token) {
+			pr_perror("Failed to copy token data");
+			goto out_close;
+		}
 	}
 
 	ret = 0;
@@ -672,10 +748,44 @@ out_close:
  * given public key and returns the ciphertext. On success, it
  * returns zero or a negative error code on error.
  */
-static int _encrypt_data_with_pubkey(gnutls_datum_t *plaintext, gnutls_datum_t *ciphertext)
+static int _encrypt_data_with_pubkey(gnutls_datum_t *plaintext, gnutls_datum_t *ciphertext, char *cert_file_path)
 {
 	unsigned int max_block_size, key_len = 0;
+	gnutls_pubkey_t pubkey;
+	gnutls_x509_crt_t crt;
+	cleanup_gnutls_datum gnutls_datum_t cert_data = { NULL, 0 };
 	int ret;
+
+	pr_debug("Loading public key from %s\n", cert_file_path);
+	ret = gnutls_load_file(cert_file_path, &cert_data);
+	if (ret < 0) {
+		tls_perror("Failed to load certificate file", ret);
+		return -1;
+	}
+
+	ret = gnutls_pubkey_init(&pubkey);
+	if (ret < 0) {
+		tls_perror("Failed to initialize public key", ret);
+		return -1;
+	}
+
+	ret = gnutls_x509_crt_init(&crt);
+	if (ret < 0) {
+		tls_perror("Failed to initialize X.509 certificate structure", ret);
+		return -1;
+	}
+
+	ret = gnutls_x509_crt_import(crt, &cert_data, GNUTLS_X509_FMT_PEM);
+	if (ret < 0) {
+		tls_perror("Failed to import certificate", ret);
+		return -1;
+	}
+
+	ret = gnutls_pubkey_import_x509(pubkey, crt, 0);
+	if (ret < 0) {
+		tls_perror("Failed to load public key", ret);
+		return -1;
+	}
 
 	ret = gnutls_pubkey_get_pk_algorithm(pubkey, &key_len);
 	if (ret < 0) {
@@ -702,6 +812,8 @@ static int _encrypt_data_with_pubkey(gnutls_datum_t *plaintext, gnutls_datum_t *
 		return -1;
 	}
 
+	gnutls_x509_crt_deinit(crt);
+
 	return 0;
 }
 
@@ -711,45 +823,131 @@ static int _encrypt_data_with_pubkey(gnutls_datum_t *plaintext, gnutls_datum_t *
  */
 int write_img_cipher(void)
 {
-	int ret;
-	struct cr_img *img;
-	CipherEntry ce = CIPHER_ENTRY__INIT;
-	gnutls_datum_t plaintext, ciphertext;
+	int ret = -1;
+	struct cr_img *img = NULL;
+	char *cert_file_path = CRIU_CERT;
+	gnutls_datum_t plaintext;
+	TokenEntries token_entries = TOKEN_ENTRIES__INIT;
+	CipherEntry cipher_entry = CIPHER_ENTRY__INIT;
+	unsigned i = 0;
+	bool default_key_exists = false;
 
-	if (!opts.encrypt) {
+	if (!opts.encrypt)
 		return 0;
-	}
-
-	if (!pubkey) {
-		pr_err("Public key is not initialized\n");
-		return -1;
-	}
 
 	plaintext.data = token;
 	plaintext.size = sizeof(token);
-	ret = _encrypt_data_with_pubkey(&plaintext, &ciphertext);
-	if (ret < 0) {
+
+	/* Use the TLS certificate specified with --tls-cert, if provided.
+	 * Otherwise, fall back to the default certificate path defined by CRIU_CERT.
+	 */
+	if (opts.tls_cert)
+		cert_file_path = opts.tls_cert;
+
+	default_key_exists = (access(cert_file_path, F_OK) == 0);
+
+	token_entries.n_key_entries = n_key_map_entries;
+	if (default_key_exists)
+		token_entries.n_key_entries += 1;
+
+	token_entries.key_entries = (KeyEntry**)xmalloc(sizeof(KeyEntry*) * token_entries.n_key_entries);
+	if (!token_entries.key_entries) {
+		pr_err("Failed to allocate memory for key_entries\n");
 		return -1;
 	}
-	ce.token.len = ciphertext.size;
-	ce.token.data = ciphertext.data;
+
+	memset(token_entries.key_entries, 0, sizeof(KeyEntry*) * token_entries.n_key_entries);
+
+	if (default_key_exists) {
+		gnutls_datum_t ciphertext;
+		KeyEntry *ke = xmalloc(sizeof(*ke));
+		if (!ke)
+			goto cleanup;
+
+		key_entry__init(ke);
+
+		ret = _encrypt_data_with_pubkey(&plaintext, &ciphertext, cert_file_path);
+		if (ret < 0)
+			goto cleanup;
+
+		/* Setting `key_id = NULL` indicates that a public key was specified
+		 * with `--tls-cert` or loaded from the default location (CRIU_CERT).
+		 */
+		ke->key_id = NULL;
+		ke->chacha20_poly1305_key.len = ciphertext.size;
+		ke->chacha20_poly1305_key.data = (uint8_t*)xmalloc(ciphertext.size);
+		if (!ke->chacha20_poly1305_key.data) {
+			gnutls_free(ciphertext.data);
+			goto cleanup;
+		}
+		memcpy(ke->chacha20_poly1305_key.data, ciphertext.data, ciphertext.size);
+		gnutls_free(ciphertext.data);
+
+		token_entries.key_entries[i] = ke;
+		i++;
+	}
+
+	if (n_key_map_entries > 0) {
+		gnutls_datum_t ciphertext;
+		key_map_t *key;
+
+		list_for_each_entry(key, &key_map_list, list) {
+			KeyEntry *ke = xmalloc(sizeof(*ke));
+			if (!ke)
+				goto cleanup;
+
+			key_entry__init(ke);
+
+			ret = _encrypt_data_with_pubkey(&plaintext, &ciphertext, key->file_path);
+			if (ret < 0) {
+				free(ke);
+				goto cleanup;
+			}
+
+			ke->key_id = key->key_id;
+			ke->chacha20_poly1305_key.len = ciphertext.size;
+			ke->chacha20_poly1305_key.data = (uint8_t*)xmalloc(ciphertext.size);
+			if (!ke->chacha20_poly1305_key.data) {
+				free(ke);
+				gnutls_free(ciphertext.data);
+				goto cleanup;
+			}
+			memcpy(ke->chacha20_poly1305_key.data, ciphertext.data, ciphertext.size);
+			gnutls_free(ciphertext.data);
+
+			token_entries.key_entries[i] = ke;
+			i++;
+		}
+	}
+
+	cipher_entry.tokens = &token_entries;
 
 	pr_debug("Writing cipher image\n");
 	img = open_image(CR_FD_CIPHER, O_DUMP);
 	if (!img)
-		return -1;
+		goto cleanup;
 
-	ret = pb_write_one(img, &ce, PB_CIPHER);
+	ret = pb_write_one(img, &cipher_entry, PB_CIPHER);
 	if (ret < 0) {
 		pr_err("Failed to write ciphertext size to image\n");
-		goto err;
+		goto cleanup;
 	}
 
-err:
-	gnutls_free(ciphertext.data);
-	close_image(img);
+cleanup:
+	if (img)
+		close_image(img);
+
+	for (unsigned j = 0; j < token_entries.n_key_entries; j++) {
+		if (token_entries.key_entries[j]) {
+			xfree(token_entries.key_entries[j]->chacha20_poly1305_key.data);
+			xfree(token_entries.key_entries[j]);
+		}
+	}
+	xfree(token_entries.key_entries);
+
 	return ret;
 }
+
 
 /**
  * tls_encrypt_data performs in-place encryption of data with ChaCha20-Poly1305
