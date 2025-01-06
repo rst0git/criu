@@ -210,6 +210,9 @@ struct cr_options {
 	int tls;
 	int tls_no_cn_verify;
 
+	/* This enables compression of memory pages. */
+	int pages_compression;
+
 	/* This stores which method to use for file validation. */
 	int file_validation_method;
 

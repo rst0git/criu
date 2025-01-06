@@ -13,6 +13,7 @@
 #include "restorer.h"
 #include "rst-malloc.h"
 #include "page-xfer.h"
+#include "compression.h"
 
 #include "fault-injection.h"
 #include "xmalloc.h"
@@ -162,6 +163,7 @@ static int seek_pagemap(struct page_read *pr, unsigned long vaddr)
 
 		if (end <= vaddr)
 			skip_pagemap_pages(pr, end - pr->cvaddr);
+
 	adv:; /* otherwise "label at end of compound stmt" gcc error */
 	} while (advance(pr));
 
@@ -350,7 +352,6 @@ int pagemap_enqueue_iovec(struct page_read *pr, void *buf, unsigned long len, st
 		/* Extendable */
 		iov->iov_len += len;
 	} else {
-		/* Need one more target iovec */
 		unsigned int n_iovs = cur_async->nr + 1;
 
 		if (n_iovs >= IOV_MAX)
@@ -363,6 +364,7 @@ int pagemap_enqueue_iovec(struct page_read *pr, void *buf, unsigned long len, st
 		cur_async->to = iov;
 
 		iov += cur_async->nr;
+
 		iov->iov_base = buf;
 		iov->iov_len = len;
 
@@ -394,6 +396,60 @@ static int maybe_read_page_local(struct page_read *pr, unsigned long vaddr, int 
 	}
 
 	pr->pi_off += len;
+
+	return ret;
+}
+
+/*
+ * When pages are compressed, we need to read data at the
+ * correct file offset and size, and decompress it.
+ */
+static int maybe_read_page_local_compressed(struct page_read *pr, unsigned long vaddr, int nr, void *buf, unsigned flags)
+{
+	int fd;
+	ssize_t ret = 0;
+	size_t curr = 0;
+
+	if ((flags & (PR_ASYNC | PR_ASAP)) == PR_ASYNC) {
+		ret = pagemap_enqueue_iovec(pr, buf, pr->pe->total_compressed_size, &pr->async);
+		pr->pi_off += pr->pe->total_compressed_size;
+		return ret;
+	}
+
+	fd = img_raw_fd(pr->pi);
+	if (fd < 0) {
+		pr_err("Failed getting raw image fd\n");
+		return -1;
+	}
+	/*
+	 * Flush any pending async requests if any not to break the
+	 * linear reading from the pages.img file.
+	 */
+	if (pr->sync(pr))
+		return -1;
+
+	pr_debug("\tpr%lu-%u Read page from self %lx/%" PRIx64 "\n", pr->img_id, pr->id, pr->cvaddr, pr->pi_off);
+	for (int i = 0; i < pr->pe->n_compressed_size; i++) {
+		char compressed_buf[PAGE_SIZE];
+
+		ret = pread(fd, compressed_buf, pr->pe->compressed_size[i], pr->pi_off);
+		if (ret != pr->pe->compressed_size[i]) {
+			pr_perror("Can't read mapping page %" PRId64, ret);
+			return -1;
+		}
+
+		pr_debug("pr->pi_off: %ld, pr->pe->compressed_size[%d]: %d, curr: %ld\n", pr->pi_off, i, pr->pe->compressed_size[i], curr);
+		if (decompress_data(compressed_buf, pr->pe->compressed_size[i], PAGE_SIZE, buf + curr)) {
+			pr_perror("Decompression failed\n");
+			return -1;
+		}
+
+		curr += PAGE_SIZE;
+		pr->pi_off += pr->pe->compressed_size[i];
+	}
+
+	if (ret == 0 && pr->io_complete)
+		ret = pr->io_complete(pr, vaddr, nr);
 
 	return ret;
 }
@@ -571,7 +627,6 @@ static int process_async_reads(struct page_read *pr)
 			 * Modify the piov in-place, we're going to drop this one
 			 * anyway.
 			 */
-
 			advance_piov(piov, ret);
 			goto more;
 		}
@@ -834,6 +889,8 @@ int open_page_read_at(int dfd, unsigned long img_id, struct page_read *pr, int p
 		pr->maybe_read_page = maybe_read_page_remote;
 	else if (opts.stream)
 		pr->maybe_read_page = maybe_read_page_img_streamer;
+	else if (opts.pages_compression)
+		pr->maybe_read_page = maybe_read_page_local_compressed;
 	else {
 		pr->maybe_read_page = maybe_read_page_local;
 		if (!pr->parent && !opts.lazy_pages)

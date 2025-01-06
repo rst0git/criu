@@ -1835,6 +1835,9 @@ static int cr_pre_dump_finish(int status)
 	he.has_pre_dump_mode = true;
 	he.pre_dump_mode = opts.pre_dump_mode;
 
+	he.has_pages_compression = true;
+	he.pages_compression = opts.pages_compression;
+
 	pstree_switch_state(root_item, TASK_ALIVE);
 
 	timing_stop(TIME_FROZEN);

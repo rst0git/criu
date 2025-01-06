@@ -9,8 +9,10 @@ message pagemap_head {
 }
 
 message pagemap_entry {
-	required uint64 vaddr		= 1 [(criu).hex = true];
-	required uint32 nr_pages	= 2;
-	optional bool	in_parent	= 3;
-	optional uint32	flags		= 4 [(criu).flags = "pmap.flags" ];
+	required uint64 vaddr			= 1 [(criu).hex = true];
+	required uint32 nr_pages		= 2;
+	optional bool	in_parent		= 3;
+	optional uint32	flags			= 4 [(criu).flags = "pmap.flags" ];
+	repeated uint32 compressed_size		= 5;
+	optional uint32	total_compressed_size	= 6;
 }

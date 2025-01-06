@@ -139,6 +139,10 @@ int check_img_inventory(bool restore)
 			dump_criu_run_id[0] = NO_DUMP_CRIU_RUN_ID;
 		}
 
+		if (he->has_pages_compression && he->pages_compression) {
+			pr_debug("Memory page decompression is enabled\n");
+			opts.pages_compression = true;
+		}
 	}
 
 	ret = 0;
@@ -396,6 +400,9 @@ int prepare_inventory(InventoryEntry *he)
 
 	if (!he->dump_criu_run_id)
 		return -1;
+
+	he->has_pages_compression = true;
+	he->pages_compression = opts.pages_compression;
 
 	return 0;
 }

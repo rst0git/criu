@@ -27,6 +27,7 @@
 #include "rst_info.h"
 #include "stats.h"
 #include "tls.h"
+#include "compression.h"
 
 static int page_server_sk = -1;
 
@@ -879,6 +880,8 @@ int page_xfer_dump_pages(struct page_xfer *xfer, struct page_pipe *pp)
 	struct page_pipe_buf *ppb;
 	unsigned int cur_hole = 0;
 	int ret;
+	static int pi_offset = 0;
+
 
 	pr_debug("Transferring pages:\n");
 
@@ -901,10 +904,55 @@ int page_xfer_dump_pages(struct page_xfer *xfer, struct page_pipe *pp)
 
 			flags = ppb_xfer_flags(xfer, ppb);
 
-			if (xfer->write_pagemap(xfer, &iov, flags))
-				return -1;
-			if ((flags & PE_PRESENT) && xfer->write_pages(xfer, ppb->p[0], iov.iov_len))
-				return -1;
+			if (opts.pages_compression) {
+				int i;
+				ssize_t curr = 0;
+				char buf[PAGE_SIZE], compressed_buf[PAGE_SIZE];
+				size_t n_compressed_size = iov.iov_len / PAGE_SIZE;
+
+				PagemapEntry pe = PAGEMAP_ENTRY__INIT;
+				pe.compressed_size = xzalloc(n_compressed_size * sizeof(uint32_t));
+				pe.n_compressed_size = n_compressed_size;
+				pe.has_total_compressed_size = true;
+				pe.total_compressed_size = 0;
+
+				for (i = 0, curr = 0; curr < iov.iov_len; curr += PAGE_SIZE, i++) {
+					ret = read(ppb->p[0], buf, PAGE_SIZE);
+					if (ret < 0) {
+						pr_perror("Unable to read data");
+						return -1;
+					}
+					if (ret == 0) {
+						pr_err("A pipe was closed unexpectedly\n");
+						return -1;
+					}
+					BUG_ON(ret != PAGE_SIZE);
+
+					pe.compressed_size[i] = compress_data(buf, PAGE_SIZE, compressed_buf);
+					pe.total_compressed_size += pe.compressed_size[i];
+					pr_debug(">> pi_offset: %d, pe.compressed_size[%d]: %u\n", pi_offset, i, pe.compressed_size[i]);
+					pi_offset += pe.compressed_size[i];
+
+					ret = write(img_raw_fd(xfer->pi), compressed_buf, pe.compressed_size[i]);
+					if (ret != pe.compressed_size[i]) {
+						pr_perror("Unable to write data %d", ret);
+						return -1;
+					}
+				}
+
+				pe.vaddr = encode_pointer(iov.iov_base);
+				pe.nr_pages = iov.iov_len / PAGE_SIZE;
+				pe.has_flags = true;
+				pe.flags = flags;
+
+				if (pb_write_one(xfer->pmi, &pe, PB_PAGEMAP) < 0)
+					return -1;
+			} else {
+				if (xfer->write_pagemap(xfer, &iov, flags))
+					return -1;
+				if ((flags & PE_PRESENT) && xfer->write_pages(xfer, ppb->p[0], iov.iov_len))
+					return -1;
+			}
 		}
 	}
 

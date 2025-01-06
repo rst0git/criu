@@ -617,7 +617,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		"no-" OPT_NAME, no_argument, SAVE_TO, false \
 	}
 
-	static const char short_opts[] = "dSsRt:hD:o:v::x::Vr:jJ:lW:L:M:";
+	static const char short_opts[] = "dSscRt:hD:o:v::x::Vr:jJ:lW:L:M:k:";
 	static struct option long_opts[] = {
 		{ "tree", required_argument, 0, 't' },
 		{ "leave-stopped", no_argument, 0, 's' },
@@ -703,6 +703,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		BOOL_OPT("mntns-compat-mode", &opts.mntns_compat_mode),
 		BOOL_OPT("unprivileged", &opts.unprivileged),
 		BOOL_OPT("ghost-fiemap", &opts.ghost_fiemap),
+		{ "compress", no_argument, 0, 'c' },
 		{},
 	};
 
@@ -812,6 +813,10 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 			} else
 				opts.log_level++;
 			break;
+		case 'c': {
+			opts.pages_compression = true;
+			break;
+		}
 		case 1043: {
 			int fd;
 
@@ -1073,6 +1078,8 @@ bad_arg:
 
 int check_options(void)
 {
+	if (opts.pages_compression)
+		pr_debug("Compression of memory pages is enabled\n");
 	if (opts.tcp_established_ok)
 		pr_info("Will dump/restore TCP connections\n");
 	if (opts.tcp_skip_in_flight)

@@ -547,6 +547,9 @@ usage:
 	       "                        will be punched from the image\n"
 	       "  --pre-dump-mode       splice - parasite based pre-dumping (default)\n"
 	       "                        read   - process_vm_readv syscall based pre-dumping\n"
+#ifdef CONFIG_LZ4
+	       "  -c|--compress         compress memory pages\n"
+#endif
 	       "\n"
 	       "Page/Service server options:\n"
 	       "  --address ADDR        address of server or service\n"
