@@ -824,8 +824,23 @@ void pstree_switch_state(struct pstree_item *root_item, int st)
 	if (!root_item)
 		return;
 
-	if (st != TASK_DEAD)
+	if (st != TASK_DEAD) {
+		for_each_pstree_item(item) {
+			int ret = run_plugins(RESUME_DEVICES_LATE, item->pid->real);
+			/*
+			* This may not really be an error. Only certain plugin hooks
+			* (if available) will return success such as amdgpu_plugin that
+			* validates the pid of the resuming tasks in the kernel mode.
+			* Most of the times, it'll be -ENOTSUP and in few cases, it
+			* might actually be a true error code but that would be also
+			* captured in the plugin so no need to print the error here.
+			*/
+			if (ret < 0)
+				pr_debug("restore late stage hook for external plugin failed\n");
+		}
+
 		freezer_restore_state();
+	}
 
 	/*
 	 * We need to detach from all processes before waiting the init
