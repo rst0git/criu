@@ -465,6 +465,33 @@ The 'mode' may be one of the following:
     *skip*::: Don't lock the network. If *--tcp-close* is not used, the network
     must be locked externally to allow CRIU to dump TCP connections.
 
+*--allow-uprobes*::
+    Allow checkpointing when VMAs associated with uprobes are present. If this
+    option is used during checkpointing (dump), it must also be used during
+    restore. Users must ensure that the required uprobes are active at the time
+    of restoration.
++
+A uprobes VMA is automatically created by the kernel once a uprobe is
+triggered. This mapping is not removed even once the uprobe is deleted.
+So, even if a process once had uprobes attached to it, and they are removed
+by the time the process is checkpointed, this option is still required
+because CRIU has no way of knowing whether there are active uprobes or not.
++
+When using this option on restore, users need to ensure that all uprobes
+(if any) that were active on the checkpointed processes are still active.
+Otherwise, when execution reaches a uprobe'd location in the restored
+processes, that process will be sent a SIGTRAP.
++
+For example, if a uprobe is set at function _foo_ in the executable of
+process _bar_. Whenever execution in _bar_ reaches this function,
+the uprobe is triggered. If the uprobe has been triggered at least once,
+then the kernel will have created the uprobes VMA. To checkpoint _bar_,
+CRIU requires the *--allow-uprobes* option. If the uprobe is missing during
+restore, a SIGTRAP will be sent to the restored _bar_ process when
+execution reaches the _foo_ function. Unless a signal handler for SIGTRAP
+is installed, the process will be terminated and a core dump will be generated.
+
+
 *restore*
 ~~~~~~~~~
 Restores previously checkpointed processes.
@@ -691,6 +718,10 @@ The 'mode' may be one of the following:
 
 *--skip-file-rwx-check*::
     Skip checking file permissions (r/w/x for u/g/o) on restore.
+
+*--allow-uprobes*::
+    This option must be specified if it was used during the dump. For more
+    information, see this option's description in the section above.
 
 *check*
 ~~~~~~~
