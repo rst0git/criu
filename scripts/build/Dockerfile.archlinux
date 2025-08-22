@@ -16,6 +16,9 @@ RUN pacman -Syu --noconfirm \
 	libcap \
 	libnet \
 	libnl \
+	libelf \
+	libtraceevent \
+	libtracefs \
 	nftables \
 	pkgconfig \
 	protobuf-c \

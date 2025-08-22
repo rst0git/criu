@@ -298,7 +298,9 @@ endif
 
 ifneq ($(ARCH),arm)
 ifneq ($(COMPAT_TEST),y)
-        TST_NOFILE += maps03
+        TST_NOFILE += maps03			\
+		uprobes
+
 endif
 endif
 
@@ -725,6 +727,9 @@ sk-unix-listen03: CFLAGS += -DSK_UNIX_LISTEN03
 sk-unix-listen04: CFLAGS += -DSK_UNIX_LISTEN02 -DSK_UNIX_LISTEN03
 
 cgroupv2_01:		LDLIBS += -pthread
+
+uprobes:		CFLAGS += $(call pkg-cflags, libtracefs libtraceevent)
+uprobes:		LDLIBS += $(call pkg-libs, libtracefs libelf)
 
 $(LIB):	force
 	$(Q) $(MAKE) -C $(LIBDIR)

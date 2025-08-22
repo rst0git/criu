@@ -18,6 +18,10 @@ try-asm = $(call try-compile,assembler-with-cpp,$(1),$(2),$(3))
 # Usage: ifeq ($(call pkg-config-check, library),y)
 pkg-config-check = $(shell sh -c '$(PKG_CONFIG) $(1) && echo y')
 
+# pkg-config-version-check
+# Usage: ifeq ($(call pkg-config-version-check, libfoo >= 1.2), y)
+pkg-config-version-check = $(shell sh -c '$(PKG_CONFIG) --exists "$(1)" && echo y')
+
 #
 # Remove duplicates.
 uniq = $(strip $(if $1,$(firstword $1) $(call uniq,$(filter-out $(firstword $1),$1))))

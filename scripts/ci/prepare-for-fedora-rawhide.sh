@@ -4,6 +4,7 @@ set -e -x
 dnf install -y \
 	diffutils \
 	findutils \
+	elfutils-libelf-devel \
 	gawk \
 	gcc \
 	git \
@@ -16,6 +17,8 @@ dnf install -y \
 	libaio-devel \
 	libasan \
 	libcap-devel \
+	libtraceevent-devel \
+	libtracefs-devel \
 	libnet-devel \
 	libnl3-devel \
 	libbsd-devel \

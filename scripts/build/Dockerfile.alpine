@@ -37,6 +37,9 @@ RUN apk add \
 	iptables-legacy \
 	nftables \
 	iproute2 \
+	elfutils-dev \
+	libtraceevent-dev \
+	libtracefs-dev \
 	tar \
 	bash \
 	go \
