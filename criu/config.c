@@ -593,6 +593,71 @@ Esyntax:
 }
 
 /*
+ * Parse work_dir, imgs_dir and logfile for early loading of config file.
+ */
+int early_parse_rpc_cfg_file(void)
+{
+	char **_argv = NULL;
+	int _argc = 0;
+	int opt, idx;
+	int rc = 0;
+	int saved_opterr;
+
+	static const char short_opts[] = "D:W:o:";
+	static struct option long_opts[] = {
+		{ "images-dir", required_argument, 0, 'D' },
+		{ "work-dir",   required_argument, 0, 'W' },
+		{ "log-file",   required_argument, 0, 'o' },
+		{ 0, 0, 0, 0 }
+	};
+
+	if (!rpc_cfg_file)
+		return 0;
+
+	_argv = parse_config(rpc_cfg_file);
+	if (!_argv)
+		return 0;
+
+	_argc = count_elements(_argv);
+	if (_argc <= 1)
+		goto out;
+
+	/* Suppress getopt_long() error messages during early parsing */
+	saved_opterr = opterr;
+	opterr = 0;
+
+	/* Reset option index so getopt_long() starts fresh on _argv */
+	optind = 0;
+
+	while ((opt = getopt_long(_argc, _argv, short_opts, long_opts, &idx)) != -1) {
+		switch (opt) {
+		case 'D':
+			SET_CHAR_OPTS(imgs_dir, optarg);
+			break;
+		case 'W':
+			SET_CHAR_OPTS(work_dir, optarg);
+			break;
+		case 'o':
+			SET_CHAR_OPTS(output, optarg);
+			break;
+		default:
+			break;
+		}
+	}
+
+	opterr = saved_opterr;
+
+out:
+	if (_argv) {
+		for (int i = 1; i < _argc; i++)
+			free(_argv[i]);
+		free(_argv);
+	}
+
+	return rc;
+}
+
+/*
  * parse_options() is the point where the getopt parsing happens. The CLI
  * parsing as well as the configuration file parsing happens here.
  * This used to be all part of main() and to integrate the new code flow

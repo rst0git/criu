@@ -314,10 +314,9 @@ static int setup_opts_from_req(int sk, CriuOpts *req)
 
 	/*
 	 * Evaluate an additional configuration file if specified.
-	 * This needs to happen twice, because it is needed early to detect
-	 * things like work_dir, imgs_dir and logfile. The second parsing
-	 * of the optional RPC configuration file happens at the end and
-	 * overwrites all options set via RPC.
+	 * This needs to happen early to detect work_dir, imgs_dir and logfile.
+	 * The second parsing of the optional RPC configuration file happens at
+	 * the end and overwrites all options set via RPC.
 	 */
 	if (req->config_file) {
 		char *tmp_output = opts.output;
@@ -329,7 +328,7 @@ static int setup_opts_from_req(int sk, CriuOpts *req)
 		opts.imgs_dir = NULL;
 
 		rpc_cfg_file = req->config_file;
-		i = parse_options(0, NULL, &dummy, &dummy, PARSING_RPC_CONF);
+		i = early_parse_rpc_cfg_file();
 		if (i) {
 			xfree(tmp_output);
 			xfree(tmp_work);
