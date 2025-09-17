@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+
+apt-install \
+	asciidoctor \
+	bash \
+	bsdmainutils \
+	build-essential \
+	gdb \
+	git-core \
+	iptables \
+	kmod \
+	libaio-dev \
+	libbsd-dev \
+	libcap-dev \
+	libdrm-dev \
+	libgnutls28-dev \
+	libgnutls30 \
+	libnet-dev \
+	libnl-3-dev \
+	libnl-route-3-dev \
+	libperl-dev \
+	libprotobuf-c-dev \
+	libprotobuf-dev \
+	libselinux-dev \
+	pkg-config \
+	protobuf-c-compiler \
+	protobuf-compiler \
+	python3-importlib-metadata \
+	python3-pip \
+	python3-protobuf \
+	python3-yaml \
+	time \
+	util-linux \
+	uuid-dev

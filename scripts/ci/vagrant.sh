@@ -41,16 +41,13 @@ setup() {
 	vagrant up --provider=libvirt --no-tty
 	mkdir -p /root/.ssh
 	vagrant ssh-config >> /root/.ssh/config
-	ssh default sudo dnf upgrade -y
-	ssh default sudo dnf install -y gcc git gnutls-devel nftables-devel libaio-devel \
-		libasan libcap-devel libnet-devel libnl3-devel libbsd-devel make protobuf-c-devel \
-		protobuf-devel python3-protobuf python3-importlib-metadata \
-		rubygem-asciidoctor iptables libselinux-devel libbpf-devel python3-yaml libuuid-devel
 
 	# Disable sssd to avoid zdtm test failures in pty04 due to sssd socket
 	ssh default sudo systemctl mask sssd
 
 	ssh default 'sudo mkdir -p --mode=777 /vagrant && mv $HOME/criu.tar /vagrant && cd /vagrant && tar xf criu.tar'
+	ssh default sudo dnf upgrade -y
+	ssh default sudo /vagrant/criu/contrib/dependencies/dnf-packages.sh
 	ssh default cat /proc/cmdline
 }
 

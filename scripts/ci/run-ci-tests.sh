@@ -1,12 +1,7 @@
 #!/bin/bash
 set -x -e
 
-CI_PKGS=(protobuf-c-compiler libprotobuf-c-dev libaio-dev libgnutls28-dev
-		libgnutls30 libprotobuf-dev protobuf-compiler libcap-dev
-		libnl-3-dev gdb bash libnet-dev util-linux asciidoctor
-		libnl-route-3-dev time libbsd-dev python3-yaml uuid-dev
-		libperl-dev pkg-config python3-protobuf python3-pip
-		python3-importlib-metadata libdrm-dev)
+CI_PKGS=()
 
 X86_64_PKGS=(gcc-multilib)
 
@@ -60,6 +55,7 @@ ci_prep () {
 		CI_PKGS+=("${X86_64_PKGS[@]}")
 	fi
 
+	PATH="$PATH:scripts/ci/" contrib/dependencies/apt-packages.sh
 	scripts/ci/apt-install "${CI_PKGS[@]}"
 	chmod a+x "$HOME"
 }
