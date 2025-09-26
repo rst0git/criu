@@ -1,6 +1,12 @@
 #!/usr/bin/env sh
 
-apt-install \
+APT_INSTALL="$(cd "$(dirname "$0")/.." >/dev/null 2>&1 && pwd)/apt-install"
+if [ ! -x "$APT_INSTALL" ]; then
+	echo "Error: apt-install not found or not executable"
+	exit 1
+fi
+
+"$APT_INSTALL" \
 	crossbuild-essential-"${DEBIAN_ARCH}" \
 	iproute2:"${DEBIAN_ARCH}" \
 	libaio-dev:"${DEBIAN_ARCH}" \

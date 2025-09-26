@@ -55,8 +55,8 @@ ci_prep () {
 		CI_PKGS+=("${X86_64_PKGS[@]}")
 	fi
 
-	PATH="$PATH:scripts/ci/" contrib/dependencies/apt-packages.sh
-	scripts/ci/apt-install "${CI_PKGS[@]}"
+	contrib/dependencies/apt-packages.sh
+	contrib/apt-install "${CI_PKGS[@]}"
 	chmod a+x "$HOME"
 }
 
@@ -183,7 +183,7 @@ if [ "${COMPAT_TEST}x" = "yx" ] ; then
 	done
 	apt-get remove "${INCOMPATIBLE_LIBS[@]}"
 	dpkg --add-architecture i386
-	scripts/ci/apt-install "${IA32_PKGS[@]}"
+	contrib/apt-install "${IA32_PKGS[@]}"
 	mkdir -p /usr/lib/x86_64-linux-gnu/
 	mv "$REFUGE"/* /usr/lib/x86_64-linux-gnu/
 fi

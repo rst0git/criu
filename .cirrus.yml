@@ -13,7 +13,7 @@ task:
     nested_virtualization: true
 
   setup_script: |
-    scripts/ci/apt-install make gcc pkg-config git perl-modules iproute2 kmod wget cpu-checker
+    contrib/apt-install make gcc pkg-config git perl-modules iproute2 kmod wget cpu-checker
     sudo kvm-ok
   build_script: |
     make -C scripts/ci vagrant-fedora-no-vdso
@@ -63,7 +63,7 @@ task:
     nested_virtualization: true
 
   setup_script: |
-    scripts/ci/apt-install make gcc pkg-config git perl-modules iproute2 kmod wget cpu-checker
+    contrib/apt-install make gcc pkg-config git perl-modules iproute2 kmod wget cpu-checker
     sudo kvm-ok
   build_script: |
     make -C scripts/ci vagrant-fedora-rawhide
@@ -83,7 +83,7 @@ task:
     nested_virtualization: true
 
   setup_script: |
-    scripts/ci/apt-install make gcc pkg-config git perl-modules iproute2 kmod wget cpu-checker
+    contrib/apt-install make gcc pkg-config git perl-modules iproute2 kmod wget cpu-checker
     sudo kvm-ok
   build_script: |
     make -C scripts/ci vagrant-fedora-non-root
@@ -96,7 +96,7 @@ task:
     memory: 4G
   script: uname -a
   build_script: |
-    scripts/ci/apt-install make
+    contrib/apt-install make
     make -C scripts/ci local
 
 task:
@@ -107,7 +107,7 @@ task:
     memory: 4G
   script: uname -a
   build_script: |
-    scripts/ci/apt-install make
+    contrib/apt-install make
     make -C scripts/ci local CLANG=1
 
 task:

@@ -1,13 +1,11 @@
 ARG CC=gcc
 
-COPY scripts/ci/apt-install /bin/apt-install
-
 COPY . /criu
 WORKDIR /criu
 
 # On Ubuntu, kernel modules such as ip_tables and xt_mark may not be loaded by default
 # We need to install kmod to enable iptables to load these modules for us.
-RUN apt-install kmod "$CC" && contrib/dependencies/apt-packages.sh
+RUN contrib/apt-install "$CC" && contrib/dependencies/apt-packages.sh
 
 RUN git clean -dfx && date && \
 # Check single object build
