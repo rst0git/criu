@@ -89,8 +89,8 @@ struct lazy_pages_info {
 	struct page_read pr;
 
 	unsigned long xfer_len; /* in pages */
-	unsigned long total_pages;
-	unsigned long copied_pages;
+	uint64_t total_pages;
+	uint64_t copied_pages;
 
 	struct epoll_rfd lpfd;
 
@@ -516,7 +516,7 @@ free_iovs:
  * Purge range (addr, addr + len) from lazy_iovs. The range may
  * cover several continuous IOVs.
  */
-static int __drop_iovs(struct list_head *iovs, unsigned long addr, int len)
+static int __drop_iovs(struct list_head *iovs, unsigned long addr, uint64_t len)
 {
 	struct lazy_iov *iov, *n;
 
@@ -574,7 +574,7 @@ static int __drop_iovs(struct list_head *iovs, unsigned long addr, int len)
 	return 0;
 }
 
-static int drop_iovs(struct lazy_pages_info *lpi, unsigned long addr, int len)
+static int drop_iovs(struct lazy_pages_info *lpi, unsigned long addr, uint64_t len)
 {
 	if (__drop_iovs(&lpi->iovs, addr, len))
 		return -1;
@@ -666,7 +666,7 @@ static int remap_iovs(struct lazy_pages_info *lpi, unsigned long from, unsigned 
  * only inside a single VMA.
  * We assume here that pagemaps and VMAs are sorted.
  */
-static int collect_iovs(struct lazy_pages_info *lpi)
+static uint64_t collect_iovs(struct lazy_pages_info *lpi)
 {
 	unsigned long start, end, len, nr_pages = 0;
 	int n_vma = 0, max_iov_len = 0, ret = -1;
@@ -727,12 +727,12 @@ free_mm:
 	return ret;
 }
 
-static int uffd_io_complete(struct page_read *pr, unsigned long vaddr, unsigned long nr);
+static int uffd_io_complete(struct page_read *pr, unsigned long vaddr, uint64_t nr);
 
 static int ud_open(int client, struct lazy_pages_info **_lpi)
 {
 	struct lazy_pages_info *lpi;
-	int ret = -1;
+	ssize_t ret = -1;
 	int pr_flags = PR_TASK;
 
 	lpi = lpi_init();
@@ -782,7 +782,7 @@ static int ud_open(int client, struct lazy_pages_info **_lpi)
 		goto out;
 	lpi->total_pages = ret;
 
-	lp_debug(lpi, "Found %ld pages to be handled by UFFD\n", lpi->total_pages);
+	lp_debug(lpi, "Found %" PRIu64 " pages to be handled by UFFD\n", lpi->total_pages);
 
 	list_add_tail(&lpi->l, &lpis);
 	*_lpi = lpi;
@@ -821,7 +821,7 @@ static bool uffd_recoverable_error(int mcopy_rc)
 	return false;
 }
 
-static int uffd_check_op_error(struct lazy_pages_info *lpi, const char *op, unsigned long *nr_pages, long mcopy_rc)
+static int uffd_check_op_error(struct lazy_pages_info *lpi, const char *op, uint64_t *nr_pages, uint64_t mcopy_rc)
 {
 	if (errno == ENOSPC || errno == ESRCH) {
 		handle_exit(lpi);
@@ -829,11 +829,11 @@ static int uffd_check_op_error(struct lazy_pages_info *lpi, const char *op, unsi
 	}
 
 	if (!uffd_recoverable_error(mcopy_rc)) {
-		lp_perror(lpi, "%s: mcopy_rc:%ld", op, mcopy_rc);
+		lp_perror(lpi, "%s: mcopy_rc:%" PRIu64, op, mcopy_rc);
 		return -1;
 	}
 
-	lp_debug(lpi, "%s: mcopy_rc:%ld, errno:%d\n", op, mcopy_rc, errno);
+	lp_debug(lpi, "%s: mcopy_rc:%" PRIu64 ", errno:%d\n", op, mcopy_rc, errno);
 
 	if (mcopy_rc <= 0)
 		*nr_pages = 0;
@@ -843,10 +843,10 @@ static int uffd_check_op_error(struct lazy_pages_info *lpi, const char *op, unsi
 	return 0;
 }
 
-static int uffd_copy(struct lazy_pages_info *lpi, __u64 address, unsigned long *nr_pages)
+static int uffd_copy(struct lazy_pages_info *lpi, __u64 address, uint64_t *nr_pages)
 {
 	struct uffdio_copy uffdio_copy;
-	unsigned long len = *nr_pages * page_size();
+	uint64_t len = *nr_pages * page_size();
 
 	uffdio_copy.dst = address;
 	uffdio_copy.src = (unsigned long)lpi->buf;
@@ -854,7 +854,7 @@ static int uffd_copy(struct lazy_pages_info *lpi, __u64 address, unsigned long *
 	uffdio_copy.mode = 0;
 	uffdio_copy.copy = 0;
 
-	lp_debug(lpi, "uffd_copy: 0x%llx/%ld\n", uffdio_copy.dst, len);
+	lp_debug(lpi, "uffd_copy: 0x%llx/%" PRIu64 "\n", uffdio_copy.dst, len);
 	if (ioctl(lpi->lpfd.fd, UFFDIO_COPY, &uffdio_copy) &&
 	    uffd_check_op_error(lpi, "copy", nr_pages, uffdio_copy.copy))
 		return -1;
@@ -864,10 +864,11 @@ static int uffd_copy(struct lazy_pages_info *lpi, __u64 address, unsigned long *
 	return 0;
 }
 
-static int uffd_io_complete(struct page_read *pr, unsigned long img_addr, unsigned long nr)
+static int uffd_io_complete(struct page_read *pr, unsigned long img_addr, uint64_t nr)
 {
 	struct lazy_pages_info *lpi;
-	unsigned long addr = 0, req_pages;
+	unsigned long addr = 0;
+	uint64_t req_pages;
 	struct lazy_iov *req;
 	int ret;
 
@@ -919,10 +920,10 @@ static int uffd_io_complete(struct page_read *pr, unsigned long img_addr, unsign
 	return drop_iovs(lpi, addr, nr * PAGE_SIZE);
 }
 
-static int uffd_zero(struct lazy_pages_info *lpi, __u64 address, unsigned long nr_pages)
+static int uffd_zero(struct lazy_pages_info *lpi, __u64 address, uint64_t nr_pages)
 {
 	struct uffdio_zeropage uffdio_zeropage;
-	unsigned long len = page_size() * nr_pages;
+	uint64_t len = page_size() * nr_pages;
 
 	uffdio_zeropage.range.start = address;
 	uffdio_zeropage.range.len = len;
@@ -945,7 +946,7 @@ static int uffd_zero(struct lazy_pages_info *lpi, __u64 address, unsigned long n
  * Returns 0 for zero pages, 1 for "real" pages and negative value on
  * error
  */
-static int uffd_seek_pages(struct lazy_pages_info *lpi, __u64 address, unsigned long nr)
+static int uffd_seek_pages(struct lazy_pages_info *lpi, __u64 address, uint64_t nr)
 {
 	int ret;
 
@@ -960,7 +961,7 @@ static int uffd_seek_pages(struct lazy_pages_info *lpi, __u64 address, unsigned 
 	return 0;
 }
 
-static int uffd_handle_pages(struct lazy_pages_info *lpi, __u64 address, unsigned long nr, unsigned flags)
+static int uffd_handle_pages(struct lazy_pages_info *lpi, __u64 address, uint64_t nr, unsigned flags)
 {
 	int ret;
 
@@ -1002,7 +1003,7 @@ static void update_xfer_len(struct lazy_pages_info *lpi, bool pf)
 static int xfer_pages(struct lazy_pages_info *lpi)
 {
 	struct lazy_iov *iov;
-	unsigned long nr_pages;
+	uint64_t nr_pages;
 	unsigned long len;
 	int err;
 
@@ -1229,7 +1230,8 @@ static int handle_uffd_event(struct epoll_rfd *lpfd)
 
 static void lazy_pages_summary(struct lazy_pages_info *lpi)
 {
-	lp_debug(lpi, "UFFD transferred pages: (%ld/%ld)\n", lpi->copied_pages, lpi->total_pages);
+	lp_debug(lpi, "UFFD transferred pages: (%" PRIu64 "/%" PRIu64 ")\n",
+		lpi->copied_pages, lpi->total_pages);
 
 #if 0
 	if ((lpi->copied_pages != lpi->total_pages) && (lpi->total_pages > 0)) {

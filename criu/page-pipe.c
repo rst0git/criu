@@ -329,7 +329,7 @@ out:
  * beginning of the pipe belonging to the ppb and addr
  */
 static struct page_pipe_buf *get_ppb(struct page_pipe *pp, unsigned long addr, struct iovec **iov_ret,
-				     unsigned long *len)
+				     uint64_t *len)
 {
 	struct page_pipe_buf *ppb;
 	int i;
@@ -381,12 +381,12 @@ int pipe_read_dest_init(struct pipe_read_dest *prd)
 	return 0;
 }
 
-int page_pipe_read(struct page_pipe *pp, struct pipe_read_dest *prd, unsigned long addr, unsigned long int *nr_pages,
+int page_pipe_read(struct page_pipe *pp, struct pipe_read_dest *prd, unsigned long addr, uint64_t *nr_pages,
 		   unsigned int ppb_flags)
 {
 	struct page_pipe_buf *ppb;
 	struct iovec *iov = NULL;
-	unsigned long skip = 0, len;
+	uint64_t skip = 0, len;
 	ssize_t ret;
 
 	/*
@@ -406,7 +406,8 @@ int page_pipe_read(struct page_pipe *pp, struct pipe_read_dest *prd, unsigned lo
 	}
 
 	/* clamp the request if it passes the end of iovec */
-	len = min((unsigned long)iov->iov_base + iov->iov_len - addr, *nr_pages * PAGE_SIZE);
+	len = min((size_t)((uintptr_t)iov->iov_base + iov->iov_len - addr), (size_t)(*nr_pages * PAGE_SIZE));
+
 	*nr_pages = len / PAGE_SIZE;
 
 	skip += ppb->pipe_off * PAGE_SIZE;
@@ -446,7 +447,7 @@ void debug_show_page_pipe(struct page_pipe *pp)
 	pr_debug("Page pipe:\n");
 	pr_debug("* %u pipes %u/%u iovs:\n", pp->nr_pipes, pp->free_iov, pp->nr_iovs);
 	list_for_each_entry(ppb, &pp->bufs, l) {
-		pr_debug("\tbuf %lx pages, %u iovs, flags: %x pipe_off: %lx :\n", ppb->pages_in, ppb->nr_segs, ppb->flags,
+		pr_debug("\tbuf %" PRIx64 " pages, %u iovs, flags: %x pipe_off: %" PRIx64 " :\n", ppb->pages_in, ppb->nr_segs, ppb->flags,
 			 ppb->pipe_off);
 		for (i = 0; i < ppb->nr_segs; i++) {
 			iov = &ppb->iov[i];

@@ -888,7 +888,7 @@ int page_xfer_dump_pages(struct page_xfer *xfer, struct page_pipe *pp)
 	list_for_each_entry(ppb, &pp->bufs, l) {
 		unsigned int i;
 
-		pr_debug("\tbuf %lx/%d\n", ppb->pages_in, ppb->nr_segs);
+		pr_debug("\tbuf %" PRIx64 "/%d\n", ppb->pages_in, ppb->nr_segs);
 
 		for (i = 0; i < ppb->nr_segs; i++) {
 			struct iovec iov = ppb->iov[i];
@@ -1541,7 +1541,7 @@ out:
 struct ps_async_read {
 	unsigned long rb; /* read bytes */
 	unsigned long goal;
-	unsigned long nr_pages;
+	uint64_t nr_pages;
 
 	struct page_server_iov pi;
 	void *pages;
@@ -1554,13 +1554,13 @@ struct ps_async_read {
 
 static LIST_HEAD(async_reads);
 
-static inline void async_read_set_goal(struct ps_async_read *ar, unsigned long nr_pages)
+static inline void async_read_set_goal(struct ps_async_read *ar, uint64_t nr_pages)
 {
 	ar->goal = sizeof(ar->pi) + nr_pages * PAGE_SIZE;
 	ar->nr_pages = nr_pages;
 }
 
-static void init_ps_async_read(struct ps_async_read *ar, void *buf, unsigned long nr_pages, ps_async_read_complete complete,
+static void init_ps_async_read(struct ps_async_read *ar, void *buf, uint64_t nr_pages, ps_async_read_complete complete,
 			       void *priv)
 {
 	ar->pages = buf;
@@ -1570,7 +1570,7 @@ static void init_ps_async_read(struct ps_async_read *ar, void *buf, unsigned lon
 	async_read_set_goal(ar, nr_pages);
 }
 
-static int page_server_start_async_read(void *buf, unsigned long nr_pages, ps_async_read_complete complete, void *priv)
+static int page_server_start_async_read(void *buf, uint64_t nr_pages, ps_async_read_complete complete, void *priv)
 {
 	struct ps_async_read *ar;
 
@@ -1698,7 +1698,7 @@ static int page_server_start_sync_read(void *buf, unsigned long nr, ps_async_rea
 	return ret;
 }
 
-int page_server_start_read(void *buf, unsigned long nr, ps_async_read_complete complete, void *priv, unsigned flags)
+int page_server_start_read(void *buf, uint64_t nr, ps_async_read_complete complete, void *priv, unsigned flags)
 {
 	if (flags & PR_ASYNC)
 		return page_server_start_async_read(buf, nr, complete, priv);
