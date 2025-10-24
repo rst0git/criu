@@ -204,6 +204,8 @@ class criu:
     def __init__(self):
         self.use_binary('criu')
         self.opts = rpc.criu_opts()
+        # req.SerializeToString requires images_dir_fd to be set
+        self.opts.images_dir_fd = -1
         self.sk = None
 
     def use_sk(self, sk_name):
@@ -265,6 +267,7 @@ class criu:
         """
         req = rpc.criu_req()
         req.type = rpc.CHECK
+        req.opts.MergeFrom(self.opts)
 
         resp = self._send_req_and_recv_resp(req)
 
