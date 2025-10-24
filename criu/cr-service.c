@@ -285,6 +285,31 @@ int exec_rpc_query_external_files(char *name, int sk)
 
 static char images_dir[PATH_MAX];
 
+static int resolve_images_dir_path(char images_dir_path[PATH_MAX],
+				   bool imgs_changed_by_rpc_conf,
+				   const CriuOpts *req,
+				   pid_t peer_pid)
+{
+	if (imgs_changed_by_rpc_conf) {
+		strncpy(images_dir_path, opts.imgs_dir, PATH_MAX - 1);
+		images_dir_path[PATH_MAX - 1] = '\0';
+	} else if (req->images_dir_fd != -1) {
+		if (snprintf(images_dir_path, PATH_MAX, "/proc/%d/fd/%d",
+			     peer_pid, req->images_dir_fd) >= PATH_MAX) {
+			pr_err("images_dir path truncated\n");
+			return -1;
+		}
+	} else if (req->images_dir) {
+		strncpy(images_dir_path, req->images_dir, PATH_MAX - 1);
+		images_dir_path[PATH_MAX - 1] = '\0';
+	} else {
+		pr_err("Neither images_dir_fd nor images_dir was passed by RPC client.\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 static int setup_images_and_workdir(const char *images_dir_path,
 				    bool work_changed_by_rpc_conf,
 				    CriuOpts *req,
@@ -722,16 +747,8 @@ static int setup_opts_from_req(int sk, CriuOpts *req)
 	 *  * apply_rpc_options()
 	 *  * apply_config(rpc_conf)
 	 */
-	if (imgs_changed_by_rpc_conf) {
-		strncpy(images_dir_path, opts.imgs_dir, PATH_MAX - 1);
-	} else if (req->images_dir_fd != -1) {
-		sprintf(images_dir_path, "/proc/%d/fd/%d", ids.pid, req->images_dir_fd);
-	} else if (req->images_dir) {
-		strncpy(images_dir_path, req->images_dir, PATH_MAX - 1);
-	} else {
-		pr_err("Neither images_dir_fd nor images_dir was passed by RPC client.\n");
+	if (resolve_images_dir_path(images_dir_path, imgs_changed_by_rpc_conf, req, ids.pid) < 0)
 		goto err;
-	}
 
 	if (req->parent_img)
 		SET_CHAR_OPTS(img_parent, req->parent_img);
