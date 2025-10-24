@@ -299,8 +299,8 @@ static int setup_images_and_workdir(const char *images_dir_path,
 	}
 
 	/* get full path to images_dir to use in process title */
-	if (readlink(images_dir_path, images_dir, PATH_MAX) == -1) {
-		pr_perror("Can't readlink %s", images_dir_path);
+	if (!realpath(images_dir_path, images_dir)) {
+		pr_perror("Can't get realpath %s", images_dir_path);
 		return -1;
 	}
 
