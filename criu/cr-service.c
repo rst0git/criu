@@ -303,6 +303,8 @@ static int resolve_images_dir_path(char images_dir_path[PATH_MAX],
 		strncpy(images_dir_path, req->images_dir, PATH_MAX - 1);
 		images_dir_path[PATH_MAX - 1] = '\0';
 	} else {
+		if (opts.mode == CR_CHECK)
+			return 0; /* we check if work_dir_fd in setup_images_and_workdir() */
 		pr_err("Neither images_dir_fd nor images_dir was passed by RPC client.\n");
 		return -1;
 	}
@@ -317,27 +319,48 @@ static int setup_images_and_workdir(const char *images_dir_path,
 {
 	char work_dir_path[PATH_MAX];
 
-	/* Open images dir (mode = -1, same as before) */
-	if (open_image_dir(images_dir_path, -1) < 0) {
-		pr_perror("Can't open images directory");
-		return -1;
+	if (opts.mode == CR_CHECK) {
+		if (images_dir_path[0]) {
+			/* get full path to images_dir to use in process title */
+			if (!realpath(images_dir_path, images_dir)) {
+				pr_perror("Can't get realpath %s", images_dir_path);
+				return -1;
+			}
+		} else if (!work_changed_by_rpc_conf && !req->has_work_dir_fd && !opts.work_dir) {
+			pr_err("images-dir or work-dir is required when using log file\n");
+			return -1;
+		}
+	} else {
+		if (open_image_dir(images_dir_path, -1) < 0) {
+			pr_perror("Can't open images directory");
+			return -1;
+		}
 	}
 
-	/* get full path to images_dir to use in process title */
-	if (!realpath(images_dir_path, images_dir)) {
-		pr_perror("Can't get realpath %s", images_dir_path);
-		return -1;
-	}
+	/* Determine work_dir_path */
+	if (work_changed_by_rpc_conf) {
+		strncpy(work_dir_path, opts.work_dir, PATH_MAX - 1);
 
-	if (work_changed_by_rpc_conf)
+	} else if (req->has_work_dir_fd) {
+		char proc_fd_path[PATH_MAX];
+		ssize_t n;
+
+		snprintf(proc_fd_path, sizeof(proc_fd_path), "/proc/%d/fd/%d",
+			 peer_pid, req->work_dir_fd);
+
+		n = readlink(proc_fd_path, work_dir_path, sizeof(work_dir_path) - 1);
+		if (n < 0) {
+			pr_perror("Can't readlink %s", proc_fd_path);
+			return -1;
+		}
+		work_dir_path[n] = '\0';
+	} else if (opts.work_dir) {
 		strncpy(work_dir_path, opts.work_dir, PATH_MAX - 1);
-	else if (req->has_work_dir_fd)
-		sprintf(work_dir_path, "/proc/%d/fd/%d", peer_pid, req->work_dir_fd);
-	else if (opts.work_dir)
-		strncpy(work_dir_path, opts.work_dir, PATH_MAX - 1);
-	else
+	} else {
 		strcpy(work_dir_path, images_dir_path);
+	}
 
+	/* Change to work dir */
 	if (chdir(work_dir_path)) {
 		pr_perror("Can't chdir to work_dir");
 		return -1;
@@ -895,6 +918,70 @@ exit:
 	return success ? 0 : 1;
 }
 
+/*
+ * Lightweight parser for options used by the CHECK workflow.
+ * Only parse log_file, log_to_stderr, and log_level.
+ *
+ * If we will write a log file (explicit log_file or default log file),
+ * resolve images_dir and work_dir the same way as setup_opts_from_req().
+ */
+static int setup_check_opts_from_req(int sk, CriuOpts *req)
+{
+	struct ucred ids;
+	socklen_t ids_len = sizeof(ids);
+	char images_dir_path[PATH_MAX];
+
+	if (!req)
+		return 0; /* nothing to do */
+
+	if (getsockopt(sk, SOL_SOCKET, SO_PEERCRED, &ids, &ids_len)) {
+		pr_perror("Can't get socket options");
+		return -1;
+	}
+
+	/*
+	 * A log file is needed only if:
+	 *   - log_file is explicitly set, or
+	 *   - log_to_stderr is NOT requested (so we will default to a file)
+	 */
+	if (!req->log_file || (req->has_log_to_stderr && req->log_to_stderr))
+		return 0;
+
+	if (resolve_images_dir_path(images_dir_path, false, req, ids.pid) < 0) {
+		pr_err("Failed to resolve images dir path\n");
+		return -1;
+	}
+
+	if (setup_images_and_workdir(images_dir_path, false, req, ids.pid)) {
+		pr_err("Failed to setup images and work dir\n");
+		return -1;
+	}
+
+	/* Configure logging destination */
+	if (req->log_file) {
+		if (strchr(req->log_file, '/')) {
+			pr_perror("No subdirs are allowed in log_file name");
+			return -1;
+		}
+		SET_CHAR_OPTS(output, req->log_file);
+	} else if (req->has_log_to_stderr && req->log_to_stderr) {
+		xfree(opts.output);
+		opts.output = NULL;
+	} else if (!opts.output) {
+		SET_CHAR_OPTS(output, DEFAULT_LOG_FILENAME);
+	}
+
+	/* Log level + init (log_init(NULL) routes to stderr) */
+	opts.log_level = req->log_level;
+	log_set_loglevel(req->log_level);
+	if (log_init(opts.output) == -1) {
+		pr_perror("Can't initiate log");
+		return -1;
+	}
+
+	return 0;
+}
+
 static int check(int sk, CriuOpts *req)
 {
 	int pid, status;
@@ -917,7 +1004,7 @@ static int check(int sk, CriuOpts *req)
 		__setproctitle("check --rpc");
 
 		opts.mode = CR_CHECK;
-		if (setup_opts_from_req(sk, req))
+		if (setup_check_opts_from_req(sk, req))
 			exit(1);
 
 		exit(!!cr_check());
