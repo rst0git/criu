@@ -264,12 +264,27 @@ static int cuda_process_checkpoint_action(int pid, const char *action, unsigned 
 
 	snprintf(pid_buf, sizeof(pid_buf), "%d", pid);
 
-	const char *args[] = { CUDA_CHECKPOINT, "--action", action, "--pid", pid_buf, NULL /* --timeout */,
-			       NULL /* timeout_val */, NULL };
+	const char *args[] = {
+		CUDA_CHECKPOINT,
+		"--action", action,
+		"--pid", pid_buf,
+		NULL /* --timeout */,
+		NULL /* timeout_val */,
+		NULL /* --device-map */,
+		NULL /* device_map_val */,
+		NULL
+	};
+
 	if (timeout > 0) {
 		snprintf(timeout_buf, sizeof(timeout_buf), "%d", timeout);
 		args[5] = "--timeout";
 		args[6] = timeout_buf;
+	}
+
+	if (opts.gpu_device_map && strncmp(action, ACTION_RESTORE, strlen(ACTION_RESTORE)) == 0) {
+		pr_debug("opts.gpu_device_map: %s\n", opts.gpu_device_map);
+		args[7] = "--device-map";
+		args[8] = opts.gpu_device_map;
 	}
 
 	return launch_cuda_checkpoint(args, msg_buf, buf_size);
