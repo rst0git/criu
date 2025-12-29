@@ -169,6 +169,17 @@ ifeq ($(GMON),1)
 export GMON GMONLDOPT
 endif
 
+#
+# Check if struct user_gcs is available in system headers
+HAVE_STRUCT_USER_GCS := $(shell \
+  ( printf '%s\n' \
+      '#include <asm/ptrace.h>' \
+      'int main(void){ struct user_gcs s; (void)s; return 0; }' \
+    | $(CC) $(USERCFLAGS) $(ARCHCFLAGS) -x c - -fsyntax-only >/dev/null 2>&1 \
+  ) && echo 1 || echo 0 \
+)
+DEFINES			+= -DHAVE_STRUCT_USER_GCS=$(HAVE_STRUCT_USER_GCS)
+
 AFLAGS			+= -D__ASSEMBLY__
 CFLAGS			+= $(USERCFLAGS) $(ARCHCFLAGS) $(WARNINGS) $(DEFINES) -iquote include/
 HOSTCFLAGS		+= $(WARNINGS) $(DEFINES) -iquote include/

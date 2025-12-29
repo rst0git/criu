@@ -18,6 +18,8 @@
 
 typedef struct user_pt_regs user_regs_struct_t;
 
+/* Define user_gcs only when the kernel headers don't provide it */
+#if !defined(HAVE_STRUCT_USER_GCS) || !HAVE_STRUCT_USER_GCS
 /*
  * GCS (Guarded Control Stack)
  */
@@ -26,6 +28,7 @@ struct user_gcs {
 	__u64 features_locked;
 	__u64 gcspr_el0;
 };
+#endif
 
 struct user_fpregs_struct {
 	struct user_fpsimd_state fpstate;
