@@ -49,6 +49,11 @@
 #include "cr_options.h"
 #include "util.h"
 
+#if defined(__musl__)
+/* musl libc does not need 64 suffix */
+#define fseeko64 fseeko
+#endif
+
 struct vma_metadata {
 	struct list_head list;
 	uint64_t old_pgoff;
