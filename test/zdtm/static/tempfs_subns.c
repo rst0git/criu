@@ -20,7 +20,7 @@ int main(int argc, char **argv)
 {
 	int fds[2], i;
 	pid_t pid;
-	int fd, status;
+	int fd = -1, status = -1;
 
 	test_init(argc, argv);
 
