@@ -282,6 +282,12 @@ static int core_alloc_posix_timers(TaskTimersEntry *tte, int n, PosixTimerEntry 
 {
 	int sz;
 
+	if (n == 0) {
+		tte->posix = NULL;
+		tte->n_posix = 0;
+		return 0;
+	}
+
 	/*
 	 * Will be free()-ed in core_entry_free()
 	 */
@@ -362,7 +368,7 @@ int parasite_dump_posix_timers_seized(struct proc_posix_timers_stat *proc_args, 
 {
 	CoreEntry *core = item->core[0];
 	TaskTimersEntry *tte = core->tc->timers;
-	PosixTimerEntry *pte;
+	PosixTimerEntry *pte = NULL;
 	struct proc_posix_timer *temp;
 	struct parasite_dump_posix_timers_args *args;
 	int ret, exit_code = -1;
@@ -397,6 +403,11 @@ int parasite_dump_posix_timers_seized(struct proc_posix_timers_stat *proc_args, 
 
 	exit_code = 0;
 end_posix:
+	if (exit_code) {
+		xfree(tte->posix);
+		tte->posix = NULL;
+		tte->n_posix = 0;
+	}
 	free_posix_timers(proc_args);
 	return exit_code;
 }
