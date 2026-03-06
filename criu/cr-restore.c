@@ -1720,7 +1720,7 @@ static int attach_to_tasks(bool root_seized)
 	struct pstree_item *item;
 
 	for_each_pstree_item(item) {
-		int status, i;
+		int i;
 
 		if (!task_alive(item))
 			continue;
@@ -1745,6 +1745,16 @@ static int attach_to_tasks(bool root_seized)
 				pr_perror("Can't interrupt the %d task", pid);
 				return -1;
 			}
+		}
+	}
+	for_each_pstree_item(item) {
+		int status, i;
+
+		if (!task_alive(item))
+			continue;
+
+		for (i = 0; i < item->nr_threads; i++) {
+			pid_t pid = item->threads[i].real;
 
 			if (wait4(pid, &status, __WALL, NULL) != pid) {
 				pr_perror("waitpid(%d) failed", pid);
@@ -1821,24 +1831,17 @@ static int restore_rseq_cs(void)
 	return 0;
 }
 
-static int catch_tasks(bool root_seized, pid_t *pids, int nr_tasks)
+static int catch_tasks(pid_t *pids, int nr_tasks)
 {
 	struct pstree_item *item;
 	bool nobp = fault_injected(FI_NO_BREAKPOINTS) || !kdat.has_breakpoints;
 	int npids = 0;
 
 	for_each_pstree_item(item) {
-		int status, i, ret;
+		int i;
 
 		if (!task_alive(item))
 			continue;
-
-		if (item->nr_threads == 1) {
-			item->threads[0].real = item->pid->real;
-		} else {
-			if (parse_threads(item->pid->real, &item->threads, &item->nr_threads))
-				return -1;
-		}
 
 		for (i = 0; i < item->nr_threads; i++) {
 			pid_t pid = item->threads[i].real;
@@ -1853,6 +1856,16 @@ static int catch_tasks(bool root_seized, pid_t *pids, int nr_tasks)
 				pr_perror("Can't interrupt the %d task", pid);
 				return -1;
 			}
+		}
+	}
+	for_each_pstree_item(item) {
+		int status, i, ret;
+
+		if (!task_alive(item))
+			continue;
+
+		for (i = 0; i < item->nr_threads; i++) {
+			pid_t pid = item->threads[i].real;
 
 			if (wait4(pid, &status, __WALL, NULL) != pid) {
 				pr_perror("waitpid(%d) failed", pid);
@@ -2233,7 +2246,7 @@ skip_ns_bouncing:
 	pids = xzalloc(sizeof(pid_t) * task_entries->nr_threads);
 	if (!pids)
 		goto out_kill_network_unlocked;
-	if (catch_tasks(root_seized, pids, task_entries->nr_threads)) {
+	if (catch_tasks(pids, task_entries->nr_threads)) {
 		pr_err("Can't catch all tasks\n");
 		goto out_kill_network_unlocked;
 	}
