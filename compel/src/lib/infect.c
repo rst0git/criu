@@ -1737,6 +1737,96 @@ int compel_stop_on_syscall(int tasks, const int sys_nr, const int sys_nr_compat)
 	return 0;
 }
 
+enum {
+	SYS_TRAP_UNSPEC = 0, /* the target syscall isn't found yet */
+	SYS_TRAP_ENTER  = 1, /* enter to the target syscall */
+	SYS_TRAP_EXIT   = 2, /* exit from the target syscall */
+};
+
+/*
+ * Trap multiple tasks on the exit from the specified syscall.
+ *
+ * wait4() with specific PIDs is used instead of wait4(-1, ...) to avoid
+ * the performance overhead of the kernel iterating over many tasks to
+ * find one that has changed state.
+ *
+ * nr_tasks - number of processes, which should be trapped
+ * pids - an array of process IDs
+ * sys_nr - the required syscall number
+ * sys_nr_compat - the required compatible syscall number
+ */
+int compel_stop_tasks_on_syscall(int nr_tasks, pid_t *pids, const int sys_nr, const int sys_nr_compat)
+{
+	user_regs_struct_t regs;
+	int status, ret, exit_code = -1;
+	int cont = 1, i;
+	uint8_t *done;
+	pid_t pid;
+
+	done = xzalloc(sizeof(done[0]) * nr_tasks);
+	if (!done)
+		return -1;
+
+	/* Stop all threads on the enter point in sys_rt_sigreturn */
+	while (cont) {
+		cont = 0;
+
+		for (i = 0; i < nr_tasks; i++) {
+			if (done[i] == SYS_TRAP_EXIT)
+				continue;
+			cont = 1;
+			pid = pids[i];
+			pid = wait4(pid, &status, __WALL, NULL);
+			if (pid == -1) {
+				pr_perror("wait4 failed");
+				goto err;
+			}
+
+			if (!task_is_trapped(status, pid))
+				goto err;
+
+			pr_debug("%d was trapped\n", pid);
+
+			if ((WSTOPSIG(status) & PTRACE_SYSCALL_TRAP) == 0) {
+				/*
+				 * On some platforms such as ARM64, it is impossible to
+				 * pass through a breakpoint, so let's clear it right
+				 * after it has been triggered.
+				*/
+				if (ptrace_flush_breakpoints(pid)) {
+					pr_err("Unable to clear breakpoints\n");
+					goto err;
+				}
+				goto goon;
+			}
+			if (done[i] == SYS_TRAP_ENTER) {
+				done[i] = SYS_TRAP_EXIT;
+				continue;
+			}
+
+			ret = ptrace_get_regs(pid, &regs);
+			if (ret) {
+				pr_perror("ptrace");
+				goto err;
+			}
+
+			if (is_required_syscall(&regs, pid, sys_nr, sys_nr_compat))
+				done[i] = SYS_TRAP_ENTER;
+		goon:
+			/* Let this task run while updating the others. */
+			ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+			if (ret) {
+				pr_perror("ptrace");
+				goto err;
+			}
+		}
+	}
+	exit_code = 0;
+err:
+	xfree(done);
+	return exit_code;
+}
+
 int compel_mode_native(struct parasite_ctl *ctl)
 {
 	return user_regs_native(&ctl->orig.regs);
