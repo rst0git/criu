@@ -1747,7 +1747,6 @@ __visible long __export_restore_task(struct task_restore_args *args)
 	n_helpers = args->helpers_n;
 	zombies = args->zombies;
 	n_zombies = args->zombies_n;
-	*args->breakpoint = rst_sigreturn;
 #ifdef ARCH_HAS_LONG_PAGES
 	__page_size = args->page_size;
 #endif

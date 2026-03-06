@@ -1834,7 +1834,6 @@ static int restore_rseq_cs(void)
 static int catch_tasks(pid_t *pids, int nr_tasks)
 {
 	struct pstree_item *item;
-	bool nobp = fault_injected(FI_NO_BREAKPOINTS) || !kdat.has_breakpoints;
 	int npids = 0;
 
 	for_each_pstree_item(item) {
@@ -1859,7 +1858,7 @@ static int catch_tasks(pid_t *pids, int nr_tasks)
 		}
 	}
 	for_each_pstree_item(item) {
-		int status, i, ret;
+		int status, i;
 
 		if (!task_alive(item))
 			continue;
@@ -1872,9 +1871,10 @@ static int catch_tasks(pid_t *pids, int nr_tasks)
 				return -1;
 			}
 
-			ret = compel_stop_pie(pid, rsti(item)->breakpoint, nobp);
-			if (ret < 0)
+			if (ptrace(PTRACE_SYSCALL, pid, NULL, NULL)) {
+				pr_perror("Unable to resume the %d process", pid);
 				return -1;
+			}
 		}
 	}
 
@@ -3329,7 +3329,6 @@ static int sigreturn_restore(pid_t pid, struct task_restore_args *task_args, uns
 		goto err;
 	}
 
-	task_args->breakpoint = &rsti(current)->breakpoint;
 	task_args->fault_strategy = fi_strategy;
 
 	sigemptyset(&blockmask);

@@ -725,7 +725,6 @@ static int parasite_init_daemon(struct parasite_ctl *ctl)
 		goto err;
 	}
 
-	ctl->sigreturn_addr = (void *)(uintptr_t)args->sigreturn_addr;
 	ctl->daemonized = true;
 	pr_info("Parasite %d has been switched to daemon mode\n", pid);
 	return 0;
@@ -1435,9 +1434,10 @@ static int parasite_fini_seized(struct parasite_ctl *ctl)
 		return -1;
 
 	/* Go to sigreturn as closer as we can */
-	ret = compel_stop_pie(pid, ctl->sigreturn_addr, ctl->ictx.flags & INFECT_NO_BREAKPOINTS);
-	if (ret < 0)
-		return ret;
+	if (ptrace(PTRACE_SYSCALL, pid, NULL, NULL)) {
+		pr_perror("Unable to restart the %d process", pid);
+		return -1;
+	}
 
 	if (compel_stop_on_syscall(1, __NR(rt_sigreturn, 0), __NR(rt_sigreturn, 1)))
 		return -1;
@@ -1588,38 +1588,6 @@ err:
 	return ret;
 }
 
-int compel_stop_pie(pid_t pid, void *addr, bool no_bp)
-{
-	int ret;
-
-	if (no_bp) {
-		pr_debug("Force no-breakpoints restore of %d\n", pid);
-		ret = 0;
-	} else
-		ret = ptrace_set_breakpoint(pid, addr);
-	if (ret < 0)
-		return ret;
-
-	if (ret > 0) {
-		/*
-		 * PIE will stop on a breakpoint, next
-		 * stop after that will be syscall enter.
-		 */
-		return 0;
-	}
-
-	/*
-	 * No breakpoints available -- start tracing it
-	 * in a per-syscall manner.
-	 */
-	ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
-	if (ret) {
-		pr_perror("Unable to restart the %d process", pid);
-		return -1;
-	}
-	return 0;
-}
-
 static bool task_is_trapped(int status, pid_t pid)
 {
 	if (WIFSTOPPED(status) && (WSTOPSIG(status) & ~PTRACE_SYSCALL_TRAP) == SIGTRAP)
@@ -1676,22 +1644,19 @@ int compel_stop_on_syscall(int tasks, const int sys_nr, const int sys_nr_compat)
 
 		pr_debug("%d was trapped\n", pid);
 
-		if ((WSTOPSIG(status) & PTRACE_SYSCALL_TRAP) == 0) {
-			/*
-			 * On some platforms such as ARM64, it is impossible to
-			 * pass through a breakpoint, so let's clear it right
-			 * after it has been triggered.
-			*/
-			if (ptrace_flush_breakpoints(pid)) {
-				pr_err("Unable to clear breakpoints\n");
-				return -1;
-			}
-			goto goon;
+		if (!(WSTOPSIG(status) & PTRACE_SYSCALL_TRAP)) {
+			pr_err("Task %d is in unexpected state: %x\n", pid, status);
+			return -1;
 		}
 		if (trace == TRACE_EXIT) {
 			trace = TRACE_ENTER;
 			pr_debug("`- Expecting exit\n");
-			goto goon;
+			ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+			if (ret) {
+				pr_perror("ptrace");
+				return -1;
+			}
+			continue;
 		}
 		if (trace == TRACE_ENTER)
 			trace = TRACE_EXIT;
@@ -1722,12 +1687,17 @@ int compel_stop_on_syscall(int tasks, const int sys_nr, const int sys_nr_compat)
 			if (!task_is_trapped(status, pid))
 				return -1;
 
+			if (!(WSTOPSIG(status) & PTRACE_SYSCALL_TRAP)) {
+				pr_err("Task %d is in unexpected state: %x\n", pid, status);
+				return -1;
+			}
+
 			pr_debug("%d was stopped\n", pid);
 			tasks--;
 			continue;
 		}
-	goon:
 		ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+
 		if (ret) {
 			pr_perror("ptrace");
 			return -1;
@@ -1787,18 +1757,11 @@ int compel_stop_tasks_on_syscall(int nr_tasks, pid_t *pids, const int sys_nr, co
 
 			pr_debug("%d was trapped\n", pid);
 
-			if ((WSTOPSIG(status) & PTRACE_SYSCALL_TRAP) == 0) {
-				/*
-				 * On some platforms such as ARM64, it is impossible to
-				 * pass through a breakpoint, so let's clear it right
-				 * after it has been triggered.
-				*/
-				if (ptrace_flush_breakpoints(pid)) {
-					pr_err("Unable to clear breakpoints\n");
-					goto err;
-				}
-				goto goon;
+			if (!(WSTOPSIG(status) & PTRACE_SYSCALL_TRAP)) {
+				pr_err("Task %d is in unexpected state: %x\n", pid, status);
+				goto err;
 			}
+
 			if (done[i] == SYS_TRAP_ENTER) {
 				done[i] = SYS_TRAP_EXIT;
 				continue;
@@ -1812,7 +1775,7 @@ int compel_stop_tasks_on_syscall(int nr_tasks, pid_t *pids, const int sys_nr, co
 
 			if (is_required_syscall(&regs, pid, sys_nr, sys_nr_compat))
 				done[i] = SYS_TRAP_ENTER;
-		goon:
+
 			/* Let this task run while updating the others. */
 			ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
 			if (ret) {

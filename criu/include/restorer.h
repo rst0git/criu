@@ -229,7 +229,6 @@ struct task_restore_args {
 	unsigned long vdso_rt_size;
 	struct vdso_maps vdso_maps_rt;	 /* runtime vdso symbols */
 	unsigned long vdso_rt_parked_at; /* safe place to keep vdso */
-	void **breakpoint;
 
 	enum faults fault_strategy;
 #ifdef ARCH_HAS_LONG_PAGES
