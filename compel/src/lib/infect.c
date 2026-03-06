@@ -1439,7 +1439,7 @@ static int parasite_fini_seized(struct parasite_ctl *ctl)
 		return -1;
 	}
 
-	if (compel_stop_on_syscall(1, __NR(rt_sigreturn, 0), __NR(rt_sigreturn, 1)))
+	if (compel_stop_on_syscall(pid, __NR(rt_sigreturn, 0), __NR(rt_sigreturn, 1)))
 		return -1;
 
 	/*
@@ -1576,7 +1576,7 @@ int compel_unmap(struct parasite_ctl *ctl, unsigned long addr)
 	if (ret)
 		goto err;
 
-	ret = compel_stop_on_syscall(1, __NR(munmap, 0), __NR(munmap, 1));
+	ret = compel_stop_on_syscall(pid, __NR(munmap, 0), __NR(munmap, 1));
 
 	/*
 	 * Don't touch extended registers here: they were restored
@@ -1618,23 +1618,21 @@ static inline int is_required_syscall(user_regs_struct_t *regs, pid_t pid, const
 }
 
 /*
- * Trap tasks on the exit from the specified syscall
+ * Trap a task on the exit from the specified syscall
  *
- * tasks - number of processes, which should be trapped
+ * pid - the process, which should be trapped
  * sys_nr - the required syscall number
  * sys_nr_compat - the required compatible syscall number
  */
-int compel_stop_on_syscall(int tasks, const int sys_nr, const int sys_nr_compat)
+int compel_stop_on_syscall(pid_t pid, const int sys_nr, const int sys_nr_compat)
 {
-	enum trace_flags trace = tasks > 1 ? TRACE_ALL : TRACE_ENTER;
+	enum trace_flags trace = TRACE_ENTER;
 	user_regs_struct_t regs;
 	int status, ret;
-	pid_t pid;
 
 	/* Stop all threads on the enter point in sys_rt_sigreturn */
-	while (tasks) {
-		pid = wait4(-1, &status, __WALL, NULL);
-		if (pid == -1) {
+	while (1) {
+		if (wait4(pid, &status, __WALL, NULL) == -1) {
 			pr_perror("wait4 failed");
 			return -1;
 		}
@@ -1648,6 +1646,7 @@ int compel_stop_on_syscall(int tasks, const int sys_nr, const int sys_nr_compat)
 			pr_err("Task %d is in unexpected state: %x\n", pid, status);
 			return -1;
 		}
+
 		if (trace == TRACE_EXIT) {
 			trace = TRACE_ENTER;
 			pr_debug("`- Expecting exit\n");
@@ -1658,6 +1657,7 @@ int compel_stop_on_syscall(int tasks, const int sys_nr, const int sys_nr_compat)
 			}
 			continue;
 		}
+
 		if (trace == TRACE_ENTER)
 			trace = TRACE_EXIT;
 
@@ -1678,8 +1678,7 @@ int compel_stop_on_syscall(int tasks, const int sys_nr, const int sys_nr_compat)
 				return -1;
 			}
 
-			pid = wait4(pid, &status, __WALL, NULL);
-			if (pid == -1) {
+			if (wait4(pid, &status, __WALL, NULL) == -1) {
 				pr_perror("wait4 failed");
 				return -1;
 			}
@@ -1693,11 +1692,10 @@ int compel_stop_on_syscall(int tasks, const int sys_nr, const int sys_nr_compat)
 			}
 
 			pr_debug("%d was stopped\n", pid);
-			tasks--;
-			continue;
+			break;
 		}
-		ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
 
+		ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
 		if (ret) {
 			pr_perror("ptrace");
 			return -1;
@@ -1746,6 +1744,7 @@ int compel_stop_tasks_on_syscall(int nr_tasks, pid_t *pids, const int sys_nr, co
 				continue;
 			cont = 1;
 			pid = pids[i];
+
 			pid = wait4(pid, &status, __WALL, NULL);
 			if (pid == -1) {
 				pr_perror("wait4 failed");
