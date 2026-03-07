@@ -1,6 +1,7 @@
 # Add the cross compiler sources
-RUN echo "deb http://deb.debian.org/debian/ unstable main" >> /etc/apt/sources.list && \
-  dpkg --add-architecture ${DEBIAN_ARCH}
+RUN printf "deb http://deb.debian.org/debian unstable main\n" > /etc/apt/sources.list && \
+	dpkg --add-architecture ${DEBIAN_ARCH} && \
+	apt-get update
 
 ENV CROSS_COMPILE=${CROSS_TRIPLET}-				\
 	CROSS_ROOT=/usr/${CROSS_TRIPLET}			\
