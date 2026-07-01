@@ -104,6 +104,8 @@ extern futex_t sig_received;
 static __thread volatile struct rseq __rseq_abi __attribute__((aligned(64)));
 static __thread volatile struct rseq_cs __rseq_cs __attribute__((aligned(64)));
 
+static volatile int rseq_state = 0;
+
 static int sys_rseq(volatile struct rseq *rseq_abi, uint32_t rseq_len, int flags, uint32_t sig)
 {
 	return syscall(__NR_rseq, rseq_abi, rseq_len, flags, sig);
@@ -130,23 +132,50 @@ static unsigned long mmap_min_addr = 0x10000UL;
 /*
  * Machine code for x86_64 that emulates:
  *   __rseq_abi.rseq_cs = &__rseq_cs;
- *   while (futex_get(f) == 0) {}
+ *   rseq_state = 1;
+ *   while (futex_get(f) == 0) {
+ *       if (__rseq_abi.rseq_cs != &__rseq_cs)
+ *           return;
+ *   }
  *   __rseq_abi.rseq_cs = 0;
+ *   rseq_state = 0;
  *
  * Disassembly:
- *   0: 48 89 37             mov    %rsi,(%rdi)   // set __rseq_abi.rseq_cs = &__rseq_cs
- *   3: 8b 02                mov    (%rdx),%eax   // load *f
- *   5: 85 c0                test   %eax,%eax     // check if 0
- *   7: 74 fa                je     0x3           // spin while *f == 0
- *   9: 48 c7 07 00 00 00 00 movq   $0,(%rdi)     // clear __rseq_abi.rseq_cs on exit
- *  16: c3                   ret                  // return
+ *   0x0:  48 89 37             mov    %rsi,(%rdi)   // set __rseq_abi.rseq_cs = &__rseq_cs
+ *   0x3:  c7 01 01 00 00 00    movl   $1,(%rcx)     // set rseq_state = 1
+ *   0x9:  48 39 37             cmp    %rsi,(%rdi)   // check if __rseq_abi.rseq_cs == &__rseq_cs
+ *   0xc:  75 13                jne    0x21          // if not equal, break out (jump to ret)
+ *   0xe:  8b 02                mov    (%rdx),%eax   // load *f
+ *   0x10: 85 c0                test   %eax,%eax     // check if 0
+ *   0x12: 74 f5                je     0x9           // spin while *f == 0
+ *   0x14: 48 c7 07 00 00 00 00 movq   $0,(%rdi)     // clear __rseq_abi.rseq_cs on exit
+ *   0x1b: c7 01 00 00 00 00    movl   $0,(%rcx)     // set rseq_state = 0
+ *   0x21: c3                   ret                  // return
  */
 static const uint8_t test_go_rseq_code[] = {
 	0x48, 0x89, 0x37,
+	0xc7, 0x01, 0x01, 0x00, 0x00, 0x00,
+	0x48, 0x39, 0x37,
+	0x75, 0x13,
 	0x8b, 0x02,
 	0x85, 0xc0,
-	0x74, 0xfa,
+	0x74, 0xf5,
 	0x48, 0xc7, 0x07, 0x00, 0x00, 0x00, 0x00,
+	0xc7, 0x01, 0x00, 0x00, 0x00, 0x00,
+	0xc3,
+};
+
+/*
+ * Machine code for the rseq abort section:
+ *   rseq_state = 0;
+ *   return;
+ *
+ * Disassembly:
+ *   0: c7 01 00 00 00 00    movl   $0,(%rcx)     // set rseq_state = 0
+ *   6: c3                   ret                  // return
+ */
+static const uint8_t test_go_rseq_abort_code[] = {
+	0xc7, 0x01, 0x00, 0x00, 0x00, 0x00,
 	0xc3,
 };
 
@@ -171,7 +200,8 @@ static void register_thread(void)
 	__rseq_cs.post_commit_offset = 2048;
 	__rseq_cs.abort_ip = __rseq_cs.start_ip + 2048;
 	*((uint32_t *)__rseq_cs.abort_ip - 1) = RSEQ_SIG;
-	*((uint8_t *)__rseq_cs.abort_ip) = 0xc3;
+	memcpy((void *)__rseq_cs.abort_ip, test_go_rseq_abort_code,
+	       sizeof(test_go_rseq_abort_code));
 
 	unregister_glibc_rseq();
 	rc = sys_rseq(&__rseq_abi, rseq_reg_size(), 0, RSEQ_SIG);
@@ -193,11 +223,16 @@ static void check_thread(void)
 
 static void test_go_rseq(futex_t *f)
 {
-	void (*fn)(void *, volatile struct rseq_cs *, futex_t *) =
-		(void (*)(void *, volatile struct rseq_cs *, futex_t *))__rseq_cs.start_ip;
+	void (*fn)(void *, volatile struct rseq_cs *, futex_t *, volatile int *) =
+		(void (*)(void *, volatile struct rseq_cs *, futex_t *, volatile int *))__rseq_cs.start_ip;
 
-	while (futex_get(f) == 0)
-		fn((void *)&__rseq_abi.rseq_cs, &__rseq_cs, f);
+	while (futex_get(f) == 0) {
+		fn((void *)&__rseq_abi.rseq_cs, &__rseq_cs, f, &rseq_state);
+		if (rseq_state != 0) {
+			fail("rseq_state is %d (expected 0)", rseq_state);
+			exit(1);
+		}
+	}
 }
 
 int main(int argc, char *argv[])
