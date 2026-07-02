@@ -1756,15 +1756,15 @@ static int open_unixsk_pair_master(struct unix_sk_info *ui, int *new_fd)
 
 	if (setup_and_serve_out(fle_peer, sk[1])) {
 		pr_err("Can't send pair slave\n");
-		goto err_pair;
+		goto err;
 	}
 	sk[1] = fle_peer->fe->fd;
 
 	if (bind_unix_sk(sk[0], ui))
-		goto err;
+		goto err_pair;
 
 	if (bind_unix_sk(sk[1], peer))
-		goto err;
+		goto err_pair;
 
 	*new_fd = sk[0];
 	return 1;
@@ -1805,6 +1805,7 @@ static int setup_second_end(int *sks, struct fdinfo_list_entry *second_end)
 		ret = dup(sks[0]);
 		if (ret < 0) {
 			pr_perror("Can't dup()");
+			close(sks[1]);
 			return -1;
 		}
 		close(sks[0]);
@@ -1822,7 +1823,7 @@ static int open_unixsk_standalone(struct unix_sk_info *ui, int *new_fd)
 {
 	struct unix_sk_info *queuer = ui->queuer;
 	struct unix_sk_info *peer = ui->peer;
-	struct fdinfo_list_entry *fle;
+	struct fdinfo_list_entry *fle, *second_end = NULL;
 	int sk;
 
 	fle = file_master(&ui->d);
@@ -1877,6 +1878,7 @@ static int open_unixsk_standalone(struct unix_sk_info *ui, int *new_fd)
 		sk = sks[0];
 	} else if ((ui->ue->state == TCP_ESTABLISHED && ui->ue->type != SOCK_DGRAM) && queuer &&
 		   queuer->ue->ino == FAKE_INO) {
+		struct fdinfo_list_entry *queuer_fle;
 		int ret, sks[2];
 
 		if (ui->ue->shutdown != SK_SHUTDOWN__BOTH) {
@@ -1890,14 +1892,16 @@ static int open_unixsk_standalone(struct unix_sk_info *ui, int *new_fd)
 			return -1;
 		}
 
-		if (setup_second_end(sks, file_master(&queuer->d))) {
+		queuer_fle = file_master(&queuer->d);
+		if (setup_second_end(sks, queuer_fle)) {
 			close(sks[0]);
-			close(sks[1]);
 			return -1;
 		}
 
+		second_end = queuer_fle;
 		sk = sks[0];
 	} else if (ui->ue->type == SOCK_DGRAM && queuer && queuer->ue->ino == FAKE_INO) {
+		struct fdinfo_list_entry *queuer_fle;
 		struct sockaddr_un addr;
 		int sks[2];
 
@@ -1926,12 +1930,13 @@ static int open_unixsk_standalone(struct unix_sk_info *ui, int *new_fd)
 			return -1;
 		}
 
-		if (setup_second_end(sks, file_master(&queuer->d))) {
+		queuer_fle = file_master(&queuer->d);
+		if (setup_second_end(sks, queuer_fle)) {
 			close(sks[0]);
-			close(sks[1]);
 			return -1;
 		}
 
+		second_end = queuer_fle;
 		sk = sks[0];
 	} else {
 		if (ui->ue->uflags & USK_CALLBACK) {
@@ -1958,16 +1963,14 @@ static int open_unixsk_standalone(struct unix_sk_info *ui, int *new_fd)
 	}
 
 	if (bind_unix_sk(sk, ui)) {
-		close(sk);
-		return -1;
+		goto err;
 	}
 
 	if (ui->ue->state == TCP_LISTEN) {
 		pr_info("\tPutting %u into listen state\n", ui->ue->ino);
 		if (listen(sk, ui->ue->backlog) < 0) {
 			pr_perror("Can't make usk listen");
-			close(sk);
-			return -1;
+			goto err;
 		}
 		ui->listen = 1;
 		wake_connected_sockets(ui);
@@ -1987,10 +1990,15 @@ static int open_unixsk_standalone(struct unix_sk_info *ui, int *new_fd)
 
 out:
 	if (restore_sk_common(sk, ui))
-		return -1;
+		goto err;
 
 	*new_fd = sk;
 	return 0;
+err:
+	if (second_end)
+		close(second_end->fe->fd);
+	close(sk);
+	return -1;
 }
 
 static int open_unix_sk(struct file_desc *d, int *new_fd)
