@@ -1816,6 +1816,11 @@ static int restore_rseq_cs(void)
 {
 	struct pstree_item *item;
 
+	/*
+	 * New dumps abort active rseq critical sections before parasite code
+	 * runs and do not save rseq_cs_pointer. Keep this path for images
+	 * produced by older CRIU versions.
+	 */
 	for_each_pstree_item(item) {
 		int i;
 
@@ -1924,7 +1929,7 @@ static void finalize_restore(void)
 			continue;
 
 		/* Unmap the restorer blob */
-		ctl = compel_prepare_noctx(pid, false);
+		ctl = compel_prepare_noctx(pid);
 		if (ctl == NULL)
 			continue;
 

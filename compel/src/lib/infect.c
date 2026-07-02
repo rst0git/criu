@@ -1112,13 +1112,13 @@ int compel_infect(struct parasite_ctl *ctl, unsigned long nr_threads, unsigned l
 	return 0;
 }
 
-struct parasite_thread_ctl *compel_prepare_thread(struct parasite_ctl *ctl, int pid, bool handle_rseq)
+struct parasite_thread_ctl *compel_prepare_thread_opts(struct parasite_ctl *ctl, int pid, unsigned int flags)
 {
 	struct parasite_thread_ctl *tctl;
 
 	tctl = xmemalign(__alignof__(*tctl), sizeof(*tctl));
 	if (tctl) {
-		if (prepare_thread(pid, &tctl->th, handle_rseq)) {
+		if (prepare_thread(pid, &tctl->th, flags & COMPEL_PREPARE_HANDLE_RSEQ)) {
 			xfree(tctl);
 			tctl = NULL;
 		} else {
@@ -1130,9 +1130,85 @@ struct parasite_thread_ctl *compel_prepare_thread(struct parasite_ctl *ctl, int 
 	return tctl;
 }
 
+struct parasite_thread_ctl *compel_prepare_thread(struct parasite_ctl *ctl, int pid)
+{
+	return compel_prepare_thread_opts(ctl, pid, 0);
+}
+
+int __attribute__((weak)) compel_task_size_for_regs(pid_t pid, user_regs_struct_t *regs, unsigned long *task_size)
+{
+	(void)pid;
+	(void)regs;
+
+	*task_size = compel_task_size();
+	return 0;
+}
+
 static bool task_in_rseq(struct criu_rseq_cs *rseq_cs, uint64_t addr)
 {
-	return addr >= rseq_cs->start_ip && addr < rseq_cs->start_ip + rseq_cs->post_commit_offset;
+	return addr - rseq_cs->start_ip < rseq_cs->post_commit_offset;
+}
+
+/*
+ * rseq abort signatures are 32-bit values at abort_ip - 4, so they can be
+ * unaligned and cannot be read with ptrace_peek_area().
+ */
+static int ptrace_peek_u32(pid_t pid, uint64_t addr, uint32_t *val)
+{
+	uint64_t aligned = addr & ~(uint64_t)(sizeof(long) - 1);
+	size_t off = addr - aligned;
+	unsigned long word[2] = {};
+	int ret, old_errno = errno;
+
+	errno = 0;
+	word[0] = (unsigned long)ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)aligned, NULL);
+	if (word[0] == (unsigned long)-1 && errno) {
+		ret = -errno;
+		pr_perror("PEEKDATA failed");
+		return ret;
+	}
+
+	if (off + sizeof(*val) > sizeof(long)) {
+		errno = 0;
+		word[1] = (unsigned long)ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)(aligned + sizeof(long)), NULL);
+		if (word[1] == (unsigned long)-1 && errno) {
+			ret = -errno;
+			pr_perror("PEEKDATA failed");
+			return ret;
+		}
+	}
+
+	memcpy(val, (char *)word + off, sizeof(*val));
+	errno = old_errno;
+	return 0;
+}
+
+static int validate_rseq_abort_ip(pid_t pid, user_regs_struct_t *regs, struct __ptrace_rseq_configuration *rseqc,
+				  struct criu_rseq_cs *rseq_cs)
+{
+	uint32_t sig;
+	uint64_t abort_ip = rseq_cs->abort_ip;
+	unsigned long task_size;
+
+	if (compel_task_size_for_regs(pid, regs, &task_size))
+		return -1;
+
+	if (abort_ip >= task_size || abort_ip < sizeof(sig)) {
+		pr_err("invalid rseq abort_ip %#llx\n", (unsigned long long)abort_ip);
+		return -1;
+	}
+
+	if (ptrace_peek_u32(pid, abort_ip - sizeof(sig), &sig)) {
+		pr_err("failed to read rseq abort signature\n");
+		return -1;
+	}
+
+	if (sig != rseqc->signature) {
+		pr_err("invalid rseq abort signature: %#x != %#x\n", sig, rseqc->signature);
+		return -1;
+	}
+
+	return 0;
 }
 
 static int read_rseq_cs(pid_t tid, struct __ptrace_rseq_configuration *rseqc, struct criu_rseq_cs *rseq_cs,
@@ -1143,7 +1219,7 @@ static int read_rseq_cs(pid_t tid, struct __ptrace_rseq_configuration *rseqc, st
 	if (!rseqc->rseq_abi_pointer)
 		return 0;
 
-	ret = ptrace_peek_area(tid, rseq, (void *)(long)(rseqc->rseq_abi_pointer), sizeof(struct criu_rseq));
+	ret = ptrace_peek_area(tid, rseq, (void *)(uintptr_t)rseqc->rseq_abi_pointer, sizeof(struct criu_rseq));
 	if (ret) {
 		pr_err("ptrace_peek_area(%d, %lx, %lx, %lx): fail to read rseq struct\n", tid, (unsigned long)rseq,
 		       (unsigned long)(rseqc->rseq_abi_pointer), (unsigned long)sizeof(uint64_t));
@@ -1153,7 +1229,7 @@ static int read_rseq_cs(pid_t tid, struct __ptrace_rseq_configuration *rseqc, st
 	if (!rseq->rseq_cs)
 		return 0;
 
-	ret = ptrace_peek_area(tid, rseq_cs, (void *)(long)(rseq->rseq_cs), sizeof(struct criu_rseq_cs));
+	ret = ptrace_peek_area(tid, rseq_cs, (void *)(uintptr_t)rseq->rseq_cs, sizeof(struct criu_rseq_cs));
 	if (ret) {
 		pr_err("ptrace_peek_area(%d, %lx, %lx, %lx): fail to read rseq_cs struct\n", tid,
 		       (unsigned long)rseq_cs, (unsigned long)rseq->rseq_cs,
@@ -1177,7 +1253,10 @@ static int parasite_thread_rseq(int pid, struct thread_ctx *ctx)
 
 	ret = ptrace(PTRACE_GET_RSEQ_CONFIGURATION, pid, sizeof(rseqc), &rseqc);
 	if (ret != sizeof(rseqc)) {
-		pr_perror("ptrace(PTRACE_GET_RSEQ_CONFIGURATION, %d) = %d", pid, ret);
+		if (ret < 0)
+			pr_perror("ptrace(PTRACE_GET_RSEQ_CONFIGURATION, %d)", pid);
+		else
+			pr_err("ptrace(PTRACE_GET_RSEQ_CONFIGURATION, %d) returned unexpected size %d\n", pid, ret);
 		return -1;
 	}
 
@@ -1191,13 +1270,13 @@ static int parasite_thread_rseq(int pid, struct thread_ctx *ctx)
 		 rseqc.signature);
 
 	if (read_rseq_cs(pid, &rseqc, rseq_cs, &rseq))
-		goto err;
+		return -1;
 
 	if (rseq_cs->start_ip) {
-		void *zero_addr = 0;
+		uint64_t zero = 0;
 
 		pr_debug(
-			"fixup_thread_rseq for %d: rseq_cs start_ip = %llx abort_ip = %llx post_commit_offset = %llx flags = %x version = %x; IP = %lx\n",
+			"parasite_thread_rseq for %d: rseq_cs start_ip = %llx abort_ip = %llx post_commit_offset = %llx flags = %x version = %x; IP = %lx\n",
 			pid, rseq_cs->start_ip, rseq_cs->abort_ip, rseq_cs->post_commit_offset, rseq_cs->flags,
 			rseq_cs->version, (unsigned long)REG_IP(ctx->regs));
 
@@ -1206,22 +1285,30 @@ static int parasite_thread_rseq(int pid, struct thread_ctx *ctx)
 			return -1;
 		}
 
-		if (task_in_rseq(rseq_cs, REG_IP(ctx->regs)))
-			SET_REG_IP(ctx->regs, rseq_cs->abort_ip);
+		if (rseq.flags || rseq_cs->flags)
+			pr_warn("deprecated rseq flags are ignored for %d: rseq.flags = %#x rseq_cs.flags = %#x\n",
+				pid, rseq.flags, rseq_cs->flags);
 
-		if (ptrace_poke_area(pid, &zero_addr,
-				     (void *)(long)(rseqc.rseq_abi_pointer) +
+		if (task_in_rseq(rseq_cs, REG_IP(ctx->regs))) {
+			if (validate_rseq_abort_ip(pid, &ctx->regs, &rseqc, rseq_cs))
+				return -1;
+			SET_REG_IP(ctx->regs, rseq_cs->abort_ip);
+			if (ptrace_set_regs(pid, &ctx->regs)) {
+				pr_perror("Can't apply rseq abort registers (pid: %d)", pid);
+				return -1;
+			}
+		}
+
+		if (ptrace_poke_area(pid, &zero,
+				     (void *)(uintptr_t)(rseqc.rseq_abi_pointer) +
 					     offsetof(struct criu_rseq, rseq_cs),
-				     sizeof(zero_addr))) {
+				     sizeof(zero))) {
 			pr_err("ptrace_poke_area(%d) failed to zero out rseq_cs\n", pid);
 			return -1;
 		}
 	}
 
 	return 0;
-
-err:
-	return -1;
 }
 
 static int prepare_thread(int pid, struct thread_ctx *ctx, bool handle_rseq)
@@ -1253,7 +1340,7 @@ void compel_release_thread(struct parasite_thread_ctl *tctl)
 	xfree(tctl);
 }
 
-struct parasite_ctl *compel_prepare_noctx(int pid, bool handle_rseq)
+struct parasite_ctl *compel_prepare_noctx_opts(int pid, unsigned int flags)
 {
 	struct parasite_ctl *ctl = NULL;
 
@@ -1270,7 +1357,7 @@ struct parasite_ctl *compel_prepare_noctx(int pid, bool handle_rseq)
 	ctl->tsock = -1;
 	ctl->ictx.log_fd = -1;
 
-	if (prepare_thread(pid, &ctl->orig, handle_rseq))
+	if (prepare_thread(pid, &ctl->orig, flags & COMPEL_PREPARE_HANDLE_RSEQ))
 		goto err;
 
 	ctl->rpid = pid;
@@ -1282,6 +1369,11 @@ struct parasite_ctl *compel_prepare_noctx(int pid, bool handle_rseq)
 err:
 	xfree(ctl);
 	return NULL;
+}
+
+struct parasite_ctl *compel_prepare_noctx(int pid)
+{
+	return compel_prepare_noctx_opts(pid, 0);
 }
 
 /*
@@ -1446,12 +1538,12 @@ static int make_sigframe_plain(void *from, struct rt_sigframe *f, struct rt_sigf
 	return 0;
 }
 
-struct parasite_ctl *compel_prepare(int pid, bool handle_rseq)
+struct parasite_ctl *compel_prepare_opts(int pid, unsigned int flags)
 {
 	struct parasite_ctl *ctl;
 	struct infect_ctx *ictx;
 
-	ctl = compel_prepare_noctx(pid, handle_rseq);
+	ctl = compel_prepare_noctx_opts(pid, flags);
 	if (ctl == NULL)
 		goto out;
 
@@ -1483,6 +1575,11 @@ err:
 	xfree(ctl);
 	ctl = NULL;
 	goto out;
+}
+
+struct parasite_ctl *compel_prepare(int pid)
+{
+	return compel_prepare_opts(pid, 0);
 }
 
 static bool task_in_parasite(struct parasite_ctl *ctl, user_regs_struct_t *regs)

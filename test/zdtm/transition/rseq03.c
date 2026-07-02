@@ -151,6 +151,8 @@ static unsigned long mmap_min_addr = 0x10000UL;
  *   0x14: 48 c7 07 00 00 00 00 movq   $0,(%rdi)     // clear __rseq_abi.rseq_cs on exit
  *   0x1b: c7 01 00 00 00 00    movl   $0,(%rcx)     // set rseq_state = 0
  *   0x21: c3                   ret                  // return
+ *
+ * Keep relative jump offsets in sync with the instruction sizes when editing.
  */
 static const uint8_t test_go_rseq_code[] = {
 	0x48, 0x89, 0x37,

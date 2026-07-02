@@ -339,7 +339,7 @@ static int make_sigframe(void *arg, struct rt_sigframe *sf, struct rt_sigframe *
 
 static int parasite_prepare_threads(struct parasite_ctl *ctl, struct pstree_item *item)
 {
-	bool handle_rseq = kdat.has_ptrace_get_rseq_conf;
+	unsigned int prepare_flags = kdat.has_ptrace_get_rseq_conf ? COMPEL_PREPARE_HANDLE_RSEQ : 0;
 	struct parasite_thread_ctl **thread_ctls;
 	uint64_t *thread_sp;
 	int i;
@@ -360,7 +360,7 @@ static int parasite_prepare_threads(struct parasite_ctl *ctl, struct pstree_item
 			continue;
 		}
 
-		thread_ctls[i] = compel_prepare_thread(ctl, tid->real, handle_rseq);
+		thread_ctls[i] = compel_prepare_thread_opts(ctl, tid->real, prepare_flags);
 		if (!thread_ctls[i])
 			goto free_sp;
 
@@ -381,7 +381,7 @@ free_ctls:
 
 struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item, struct vm_area_list *vma_area_list)
 {
-	bool handle_rseq = kdat.has_ptrace_get_rseq_conf;
+	unsigned int prepare_flags = kdat.has_ptrace_get_rseq_conf ? COMPEL_PREPARE_HANDLE_RSEQ : 0;
 	struct parasite_ctl *ctl;
 	struct infect_ctx *ictx;
 	unsigned long p;
@@ -395,7 +395,7 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 		return NULL;
 	}
 
-	ctl = compel_prepare_noctx(pid, handle_rseq);
+	ctl = compel_prepare_noctx_opts(pid, prepare_flags);
 	if (!ctl)
 		return NULL;
 

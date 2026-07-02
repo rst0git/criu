@@ -123,7 +123,7 @@ static int do_infection(int pid)
 		err_and_ret("Can't stop task\n");
 
 	printf("Preparing parasite ctl\n");
-	ctl = compel_prepare(pid, false);
+	ctl = compel_prepare(pid);
 	if (!ctl)
 		err_and_ret("Can't prepare for infection\n");
 

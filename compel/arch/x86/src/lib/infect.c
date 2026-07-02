@@ -4,8 +4,11 @@
 #include <sys/mman.h>
 #include <sys/user.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <compel/asm/fpu.h>
 
@@ -683,6 +686,8 @@ int ptrace_set_regs(pid_t pid, user_regs_struct_t *regs)
  * higher limit, because it's backward compatible.
  */
 #define TASK_SIZE_IA32 (0xffffe000)
+#define TASK_SIZE_IA32_3G 0xc0000000UL
+#define ADDR_LIMIT_3GB 0x08000000
 
 unsigned long compel_task_size(void)
 {
@@ -703,6 +708,58 @@ unsigned long compel_task_size(void)
 		return TASK_SIZE_56;
 
 	return TASK_SIZE_47;
+}
+
+static int get_task_personality(pid_t pid, unsigned long *personality)
+{
+	char path[64], buf[32];
+	int fd, ret;
+	char *end;
+
+	snprintf(path, sizeof(path), "/proc/%d/personality", pid);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		pr_perror("Can't open %s", path);
+		return -1;
+	}
+
+	ret = read(fd, buf, sizeof(buf) - 1);
+	if (ret < 0) {
+		pr_perror("Can't read %s", path);
+		close(fd);
+		return -1;
+	}
+	close(fd);
+
+	buf[ret] = '\0';
+	errno = 0;
+	*personality = strtoul(buf, &end, 16);
+	if (errno) {
+		pr_perror("Can't parse %s", path);
+		return -1;
+	}
+	if (end == buf) {
+		pr_err("Can't parse %s\n", path);
+		return -1;
+	}
+
+	return 0;
+}
+
+int compel_task_size_for_regs(pid_t pid, user_regs_struct_t *regs, unsigned long *task_size)
+{
+	unsigned long personality;
+
+	if (user_regs_native(regs)) {
+		*task_size = compel_task_size();
+		return 0;
+	}
+
+	if (get_task_personality(pid, &personality))
+		return -1;
+
+	*task_size = (personality & ADDR_LIMIT_3GB) ? TASK_SIZE_IA32_3G : TASK_SIZE_IA32;
+	return 0;
 }
 
 bool __compel_shstk_enabled(user_fpregs_struct_t *ext_regs)

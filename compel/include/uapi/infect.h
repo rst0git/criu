@@ -47,12 +47,18 @@ extern int compel_resume_task_sig(pid_t pid, int orig_state, int state, int stop
 struct parasite_ctl;
 struct parasite_thread_ctl;
 
-extern struct parasite_ctl __must_check *compel_prepare(int pid, bool handle_rseq);
-extern struct parasite_ctl __must_check *compel_prepare_noctx(int pid, bool handle_rseq);
+#define COMPEL_PREPARE_HANDLE_RSEQ 0x1
+
+extern struct parasite_ctl __must_check *compel_prepare(int pid);
+extern struct parasite_ctl __must_check *compel_prepare_opts(int pid, unsigned int flags);
+extern struct parasite_ctl __must_check *compel_prepare_noctx(int pid);
+extern struct parasite_ctl __must_check *compel_prepare_noctx_opts(int pid, unsigned int flags);
 extern int __must_check compel_infect(struct parasite_ctl *ctl, unsigned long nr_threads, unsigned long args_size);
 extern int __must_check compel_infect_no_daemon(struct parasite_ctl *ctl, unsigned long nr_threads,
 						unsigned long args_size);
-extern struct parasite_thread_ctl __must_check *compel_prepare_thread(struct parasite_ctl *ctl, int pid, bool handle_rseq);
+extern struct parasite_thread_ctl __must_check *compel_prepare_thread(struct parasite_ctl *ctl, int pid);
+extern struct parasite_thread_ctl __must_check *compel_prepare_thread_opts(struct parasite_ctl *ctl, int pid,
+									  unsigned int flags);
 extern void compel_release_thread(struct parasite_thread_ctl *);
 
 extern int __must_check compel_start_daemon(struct parasite_ctl *ctl);
