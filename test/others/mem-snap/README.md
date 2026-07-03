@@ -200,70 +200,54 @@ depending on the exact CRIU tree being tested.
 
 ## Recent local result
 
-The following result was captured on the `mem-benchmark` branch with the
-current large-premap CRIU binary on a Fedora 44 host with Linux
+The following result compares two CRIU binaries on a Fedora 44 host with Linux
 `7.0.14-201.fc44.x86_64`, an Intel Core Ultra 9 275HX, 24 CPUs, 188 GiB of
-RAM, and a btrfs NVMe filesystem.
+RAM, and a btrfs NVMe filesystem:
+
+```text
+without-change: origin/criu-dev at a951237e25ebb0b03e7fffc1864dee2bfe53a698
+with-change:    large-premap branch at e76320f2a16040789d265f2f5585ec11a411fc82
+```
 
 Command:
 
 ```sh
 sudo -n ./test/others/mem-snap/bench-large-restore.sh \
 	-n 10 \
-	--criu ./criu/criu \
-	--img-dir ./test/others/mem-snap/dump/large-restore-report-10 \
-	--output ./test/others/mem-snap/dump/large-restore-report-10/report.log
+	--variant without-change=/path/to/without-change/criu \
+	--variant with-change=/path/to/with-change/criu \
+	--img-dir ./test/others/mem-snap/dump/large-restore-compare-10 \
+	--output ./test/others/mem-snap/dump/large-restore-compare-10/report.log
 ```
 
-CSV output:
+Summary:
 
-```csv
-variant,iteration,mem_mib,dump_ms,restore_ms,restore_time_us,pages_restored,nr_enqueued,forced_premap_count,large_remap_count,path_hint
-criu,1,4096,1984,1765,1760849,1048606,16,1,1,large-premap
-criu,2,4096,2000,1795,1791338,1048607,15,1,1,large-premap
-criu,3,4096,1971,1805,1800801,1048606,15,1,1,large-premap
-criu,4,4096,1957,1766,1761286,1048608,16,1,1,large-premap
-criu,5,4096,2005,1773,1769155,1048606,16,1,1,large-premap
-criu,6,4096,2010,1804,1800153,1048606,15,1,1,large-premap
-criu,7,4096,1970,1795,1791188,1048608,15,1,1,large-premap
-criu,8,4096,1994,1859,1854560,1048607,15,1,1,large-premap
-criu,9,4096,1983,1781,1777073,1048606,15,1,1,large-premap
-criu,10,4096,1997,1765,1761193,1048608,15,1,1,large-premap
-```
+| Variant | Path | restore_ms mean | restore_ms median | CRIU restore_time mean |
+| --- | --- | ---: | ---: | ---: |
+| without-change | restorer-io | 1730.600 ms | 1729.000 ms | 1726127.800 us |
+| with-change | large-premap | 1742.400 ms | 1764.500 ms | 1738111.500 us |
 
-Script timing summary:
+Path evidence:
 
 ```text
-variant=criu
-dump_ms_count=10
-dump_ms_mean=1987.100
-dump_ms_median=1989.000
-dump_ms_min=1957
-dump_ms_max=2010
-restore_ms_count=10
-restore_ms_mean=1790.800
-restore_ms_median=1788.000
-restore_ms_min=1765
-restore_ms_max=1859
+without-change:
+  nr_enqueued=1040..1041
+  forced_premap_count=0
+  large_remap_count=0
+
+with-change:
+  nr_enqueued=15..16
+  forced_premap_count=1
+  large_remap_count=1
 ```
 
-CRIU internal restore stats:
+This host did not reproduce a restore-time speedup, but it does reproduce the
+intended restore-path change. The full committed result set is:
 
 ```text
-restore_time_us_count=10
-restore_time_us_mean=1786759.600
-restore_time_us_median=1784130.500
-restore_time_us_min=1760849
-restore_time_us_max=1854560
-```
-
-All iterations restored the 4096 MiB VMA through the intended path. Each
-iteration reported restore markers like:
-
-```text
-Force premap ... large restorer IO
-Remap ... len 0x100000000
-Restore finished successfully
+test/others/mem-snap/dump/large-restore-compare-10/summary.md
+test/others/mem-snap/dump/large-restore-compare-10/results.csv
+test/others/mem-snap/dump/large-restore-compare-10/report.log
 ```
 
 ## Generated files
