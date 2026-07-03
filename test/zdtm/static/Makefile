@@ -518,6 +518,12 @@ STATE_OUT	= $(TST_STATE:%=%.out)
 
 include ../Makefile.inc
 
+clean: bench-clean
+
+bench-clean:
+	$(RM) maps04-bench maps04-bench.o maps04-bench.d
+.PHONY: bench-clean
+
 ifeq ($(ARCH),aarch64)
 	PAC_CFLAGS := -mbranch-protection=standard
 else
