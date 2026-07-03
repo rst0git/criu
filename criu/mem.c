@@ -39,6 +39,12 @@
 #include "protobuf.h"
 #include "images/pagemap.pb-c.h"
 
+/*
+ * Restorer-side reads avoid mremap() overhead for small independent VMAs, but
+ * large contiguous memory restores are faster when CRIU fills a premapped VMA.
+ */
+#define RESTORER_IO_PREMAP_THRESHOLD (1ULL << 30)
+
 static int task_reset_dirty_track(int pid)
 {
 	int ret;
@@ -1054,6 +1060,61 @@ static inline bool vma_force_premap(struct vma_area *vma, struct list_head *head
 	return false;
 }
 
+static u64 pagemap_entry_end(PagemapEntry *pe)
+{
+	u64 len = pe->nr_pages * PAGE_SIZE;
+
+	if (~0ULL - pe->vaddr < len)
+		return ~0ULL;
+
+	return pe->vaddr + len;
+}
+
+static bool vma_has_large_restorer_io(struct vma_area *vma, struct page_read *pr)
+{
+	u64 restored = 0;
+	int start = 0;
+	int end = pr->nr_pmes;
+	int i;
+
+	while (start < end) {
+		int mid = start + (end - start) / 2;
+
+		if (pagemap_entry_end(pr->pmes[mid]) <= vma->e->start)
+			start = mid + 1;
+		else
+			end = mid;
+	}
+
+	for (i = start; i < pr->nr_pmes; i++) {
+		PagemapEntry *pe = pr->pmes[i];
+		u64 pe_end;
+		u64 start_addr;
+		u64 end_addr;
+
+		if (pe->vaddr >= vma->e->end)
+			break;
+		if (!pagemap_present(pe))
+			continue;
+
+		pe_end = pagemap_entry_end(pe);
+		start_addr = pe->vaddr > vma->e->start ? pe->vaddr : vma->e->start;
+		end_addr = pe_end < vma->e->end ? pe_end : vma->e->end;
+
+		if (end_addr <= start_addr)
+			continue;
+
+		restored += end_addr - start_addr;
+		if (restored >= RESTORER_IO_PREMAP_THRESHOLD) {
+			pr_debug("Force premap for 0x%" PRIx64 ":0x%" PRIx64 ": large restorer IO\n",
+				 vma->e->start, vma->e->end);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /*
  * Ensure for s390x that vma is below task size on restore system
  */
@@ -1104,7 +1165,8 @@ static int premap_priv_vmas(struct pstree_item *t, struct vm_area_list *vmas, vo
 		if (vma->e->status & VMA_EXT_PLUGIN)
 			continue;
 
-		if (vma->pvma == NULL && pr->pieok && !vma_force_premap(vma, &vmas->h)) {
+		if (vma->pvma == NULL && pr->pieok && !vma_force_premap(vma, &vmas->h) &&
+		    !vma_has_large_restorer_io(vma, pr)) {
 			/*
 			 * VMA in question is not shared with anyone. We'll
 			 * restore it with its contents in restorer.
