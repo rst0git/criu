@@ -33,6 +33,9 @@ class PodmanConfigTests(unittest.TestCase):
     def setUpClass(cls):
         cls.vllm = load_script("podman-vllm.py")
         cls.sglang = load_script("podman-sglang.py")
+        cls.vllm_dynamo = load_script("podman-vllm-dynamo.py")
+        cls.sglang_dynamo = load_script("podman-sglang-dynamo.py")
+        cls.dynamo = cls.vllm_dynamo.dynamo
         cls.common = cls.vllm.common
         cls.main = load_script("main.py")
         cls.block_cache = load_script("block-cache.py")
@@ -42,6 +45,108 @@ class PodmanConfigTests(unittest.TestCase):
         self.assertIsNot(self.vllm._benchmark, self.sglang._benchmark)
         self.assertIsNot(self.vllm._benchmark.state,
                          self.sglang._benchmark.state)
+
+    def test_dynamo_drivers_are_additive_and_have_separate_runtime_state(self):
+        self.assertIs(self.vllm_dynamo.common, self.common)
+        self.assertIs(self.sglang_dynamo.common, self.common)
+        self.assertIsNot(self.vllm_dynamo._benchmark, self.vllm._benchmark)
+        self.assertIsNot(self.sglang_dynamo._benchmark, self.sglang._benchmark)
+        self.assertEqual(
+            self.vllm.VllmAdapter.default_container_name,
+            "vllm-criu-bench",
+        )
+        self.assertEqual(
+            self.sglang.SglangAdapter.default_container_name,
+            "sglang-criu-bench",
+        )
+
+    def test_dynamo_capture_environment_overrides_forced_values(self):
+        args = SimpleNamespace(env=[])
+        self.dynamo.configure_snapshot_capture_env(args)
+        self.assertIn("HF_HUB_OFFLINE=1", args.env)
+        self.assertIn("TORCH_NCCL_DUMP_ON_TIMEOUT=0", args.env)
+
+        conflict = SimpleNamespace(env=[
+            "NCCL_CUMEM_ENABLE=1", "TORCH_NCCL_DUMP_ON_TIMEOUT=1"
+        ])
+        self.dynamo.configure_snapshot_capture_env(conflict)
+        self.assertIn("NCCL_CUMEM_ENABLE=0", conflict.env)
+        self.assertNotIn("NCCL_CUMEM_ENABLE=1", conflict.env)
+        self.assertIn("TORCH_NCCL_DUMP_ON_TIMEOUT=1", conflict.env)
+
+    def test_vllm_dynamo_lifecycle_uses_pause_sleep_wake_resume_order(self):
+        args = SimpleNamespace(
+            accelerator="gpu", base_url="http://127.0.0.1:30000",
+            request_timeout=10, cuda_visible_devices="0", vllm_sleep_level=1,
+            _dynamo_lifecycle_metrics={},
+        )
+        responses = [{}, {}, {"is_sleeping": True}, {},
+                     {"is_sleeping": False}, {}]
+        with (
+            mock.patch.object(self.dynamo, "gpu_memory_used_bytes",
+                              side_effect=[100, 10, 11, 101]),
+            mock.patch.object(self.common, "http_json",
+                              side_effect=responses) as request,
+        ):
+            self.vllm_dynamo.DynamoVllmAdapter.before_checkpoint(args)
+            self.vllm_dynamo.DynamoVllmAdapter.after_restore(args)
+
+        urls = [call.args[1] for call in request.call_args_list]
+        self.assertEqual(urls, [
+            "http://127.0.0.1:30000/pause?mode=abort",
+            "http://127.0.0.1:30000/sleep?level=1&mode=abort",
+            "http://127.0.0.1:30000/is_sleeping",
+            "http://127.0.0.1:30000/wake_up",
+            "http://127.0.0.1:30000/is_sleeping",
+            "http://127.0.0.1:30000/resume",
+        ])
+        metrics = args._dynamo_lifecycle_metrics
+        self.assertEqual(metrics["gpu_memory_before_release_bytes"], 100)
+        self.assertEqual(metrics["gpu_memory_after_release_bytes"], 10)
+        self.assertEqual(metrics["gpu_memory_after_runtime_restore_bytes"], 11)
+        self.assertEqual(metrics["gpu_memory_after_wake_bytes"], 101)
+
+    def test_sglang_dynamo_lifecycle_uses_dynamo_endpoint_order(self):
+        args = SimpleNamespace(
+            accelerator="gpu", base_url="http://127.0.0.1:30000",
+            request_timeout=10, cuda_visible_devices="0",
+            _dynamo_lifecycle_metrics={},
+        )
+        with (
+            mock.patch.object(self.dynamo, "gpu_memory_used_bytes",
+                              side_effect=[100, 9, 10, 102]),
+            mock.patch.object(self.common, "http_json", return_value={}) as request,
+        ):
+            self.sglang_dynamo.DynamoSglangAdapter.before_checkpoint(args)
+            self.sglang_dynamo.DynamoSglangAdapter.after_restore(args)
+
+        urls = [call.args[1] for call in request.call_args_list]
+        self.assertEqual(urls, [
+            "http://127.0.0.1:30000/pause_generation",
+            "http://127.0.0.1:30000/release_memory_occupation",
+            "http://127.0.0.1:30000/resume_memory_occupation",
+            "http://127.0.0.1:30000/continue_generation",
+        ])
+
+    def test_dynamo_benchmark_merges_complete_lifecycle_metrics(self):
+        adapter = SimpleNamespace()
+        benchmark = self.dynamo.DynamoLifecycleBenchmark(adapter, "test")
+        args = SimpleNamespace()
+
+        def fake_trial(_benchmark, _cfg, _workdir, trial_args, _trial_id,
+                       _keep_running):
+            metrics = trial_args._dynamo_lifecycle_metrics
+            for index, name in enumerate(self.dynamo.LIFECYCLE_METRICS[:-1], 1):
+                metrics[name] = index
+            metrics["_quiesce_started_ns"] = 1
+            return {"restore_to_first_token_us": 123}
+
+        with mock.patch.object(self.common, "run_trial", side_effect=fake_trial):
+            result = benchmark.run_trial({}, "/tmp", args, 1)
+
+        self.assertEqual(result["recovery_total_us"], 123)
+        self.assertEqual(result["lifecycle"], "dynamo-snapshot")
+        self.assertFalse(hasattr(args, "_dynamo_lifecycle_metrics"))
 
     def test_shared_serving_format_helpers_have_explicit_names(self):
         self.assertEqual(self.common.format_bytes(1048576), "1.0 MB")
