@@ -528,6 +528,11 @@ static int do_dump_one_inet_fd(int lfd, u32 id, const struct fd_parms *p, int fa
 	ie.backlog = sk->wqlen;
 	ie.flags = p->flags;
 
+	if (sk->uid != 0) {
+		ie.uid = userns_uid(sk->uid);
+		ie.has_uid = true;
+	}
+
 	ie.fown = (FownEntry *)&p->fown;
 	ie.opts = &skopts;
 	ie.ip_opts = &ipopts;
@@ -679,6 +684,7 @@ int inet_collect_one(struct nlmsghdr *h, int family, int type, struct ns_id *ns)
 	d->wqlen = m->idiag_wqueue;
 	memcpy(d->src_addr, m->id.idiag_src, sizeof(u32) * 4);
 	memcpy(d->dst_addr, m->id.idiag_dst, sizeof(u32) * 4);
+	d->uid = m->idiag_uid;
 
 	if (tb[INET_DIAG_SHUTDOWN])
 		d->shutdown = nla_get_u8(tb[INET_DIAG_SHUTDOWN]);
@@ -895,6 +901,13 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 	if (sk < 0) {
 		pr_perror("Can't create inet socket");
 		return -1;
+	}
+
+	if (ie->has_uid) {
+		if (fchown(sk, ie->uid, -1) < 0) {
+			pr_perror("Failed to set socket UID to %u", ie->uid);
+			goto err;
+		}
 	}
 
 	if (reset_setsockcreatecon())
