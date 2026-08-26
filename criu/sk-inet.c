@@ -272,6 +272,7 @@ static struct inet_sk_desc *gen_uncon_sk(int lfd, const struct fd_parms *p, int 
 
 	sk->sd.family = family;
 	sk->type = type;
+	sk->uid = p->stat.st_uid;
 
 	if (sk->sd.family == AF_INET)
 		aux = sizeof(struct sockaddr_in);

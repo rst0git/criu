@@ -16,11 +16,16 @@ static const struct sk_test {
 	int family;
 	int type;
 	int proto;
+	bool bind;
 } sockets[] = {
-	{ "tcp", AF_INET, SOCK_STREAM, IPPROTO_TCP },
-	{ "udp", AF_INET, SOCK_DGRAM, IPPROTO_UDP },
-	{ "tcp6", AF_INET6, SOCK_STREAM, IPPROTO_TCP },
-	{ "udp6", AF_INET6, SOCK_DGRAM, IPPROTO_UDP },
+	{ "tcp", AF_INET, SOCK_STREAM, IPPROTO_TCP, true },
+	{ "udp", AF_INET, SOCK_DGRAM, IPPROTO_UDP, true },
+	{ "tcp6", AF_INET6, SOCK_STREAM, IPPROTO_TCP, true },
+	{ "udp6", AF_INET6, SOCK_DGRAM, IPPROTO_UDP, true },
+	{ "tcp-unbound", AF_INET, SOCK_STREAM, IPPROTO_TCP, false },
+	{ "udp-unbound", AF_INET, SOCK_DGRAM, IPPROTO_UDP, false },
+	{ "tcp6-unbound", AF_INET6, SOCK_STREAM, IPPROTO_TCP, false },
+	{ "udp6-unbound", AF_INET6, SOCK_DGRAM, IPPROTO_UDP, false },
 };
 
 #define NSOCKS (sizeof(sockets) / sizeof(*sockets))
@@ -60,12 +65,12 @@ int main(int argc, char **argv)
 			alen = sizeof(addr.v6);
 		}
 
-		if (bind(fds[i], (struct sockaddr *)&addr, alen)) {
+		if (s->bind && bind(fds[i], (struct sockaddr *)&addr, alen)) {
 			pr_perror("can't bind %s socket", s->name);
 			return 1;
 		}
 
-		if (s->type == SOCK_STREAM && listen(fds[i], 1)) {
+		if (s->bind && s->type == SOCK_STREAM && listen(fds[i], 1)) {
 			pr_perror("can't listen on %s socket", s->name);
 			return 1;
 		}
