@@ -115,6 +115,20 @@ int main(void)
 		return 1;
 	}
 
+	if (!(data.flags & SOCCR_FLAGS_WINDOW)) {
+		fprintf(stderr, "TCP_REPAIR_WINDOW is not supported\n");
+		return 1;
+	}
+
+	/*
+	 * A zero or retracted receive window can leave snd_wl1 beyond the
+	 * current right window edge. The kernel rejects this state when it is
+	 * passed to TCP_REPAIR_WINDOW, so libsoccr has to clamp snd_wl1 before
+	 * restoring the window.
+	 */
+	data.rcv_wnd = 0;
+	data.snd_wl1 = data.inq_seq + 1;
+
 #ifndef TEST_IPV6
 	rst = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 #else
