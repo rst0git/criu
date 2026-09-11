@@ -35,7 +35,8 @@ static void test_plugin_options(void)
 		(char *)"check",
 		NULL,
 	};
-	assert(init_opts() == 0);
+	init_opts();
+	assert(cr_plugin_options_init() == 0);
 	assert(parse_options(5, argv, &usage_error, &has_exec_cmd, PARSING_GLOBAL_CONF) == 0);
 	assert(criu_plugin_get_options(&plugin_argc, &plugin_argv) == 0);
 	assert(plugin_argc == 2);
@@ -65,10 +66,28 @@ static void test_plugin_options(void)
 	assert(!strcmp(plugin_argv[1], "--example.option=config"));
 	assert(!strcmp(plugin_argv[2], "--example.option=request"));
 
+	/* Resetting worker options must not discard plugin arguments. */
+	opts.tree_id = 123;
+	init_opts();
+	assert(opts.tree_id == 0);
+	assert(criu_plugin_get_options(&plugin_argc, &plugin_argv) == 0);
+	assert(plugin_argc == 3);
+	assert(!strcmp(plugin_argv[1], "--example.option=config"));
+	assert(!strcmp(plugin_argv[2], "--example.option=request"));
+	assert(plugin_argv[3] == NULL);
+
+	/* Request setup drops only the previous request arguments. */
 	cr_plugin_options_clear_request();
 	assert(criu_plugin_get_options(&plugin_argc, &plugin_argv) == 0);
 	assert(plugin_argc == 2);
 	assert(!strcmp(plugin_argv[1], "--example.option=config"));
+	assert(plugin_argv[2] == NULL);
+	assert(cr_plugin_option_add_arg("example.option=next-request") == 0);
+	cr_plugin_options_clear_request();
+	assert(criu_plugin_get_options(&plugin_argc, &plugin_argv) == 0);
+	assert(plugin_argc == 2);
+	assert(!strcmp(plugin_argv[1], "--example.option=config"));
+	assert(plugin_argv[2] == NULL);
 	cr_plugin_options_clear();
 
 	assert(cr_plugin_option_add_arg("missing.option=value") == 0);
@@ -98,19 +117,20 @@ static void test_plugin_options(void)
 	assert(criu_plugin_get_options(NULL, &plugin_argv) == -EINVAL);
 	assert(criu_plugin_get_options(&plugin_argc, NULL) == -EINVAL);
 
-	/* Test that init_opts() resets plugin options */
+	/* Plugin option cleanup is independent of ordinary option initialization. */
 	assert(cr_plugin_option_add_arg("example.option=saved") == 0);
 	cr_plugin_default_options_parsed();
 	assert(criu_plugin_get_options(&plugin_argc, &plugin_argv) == 0);
 	assert(plugin_argc == 2);
 
-	assert(init_opts() == 0);
+	cr_plugin_options_free();
+	assert(cr_plugin_options_init() == 0);
 	assert(criu_plugin_get_options(&plugin_argc, &plugin_argv) == 0);
 	assert(plugin_argc == 1);
 	assert(!strcmp(plugin_argv[0], "criu-plugin"));
 	assert(plugin_argv[1] == NULL);
 
-	cr_plugin_options_clear();
+	cr_plugin_options_free();
 }
 
 static void test_pagemap_offset_alignment(void)

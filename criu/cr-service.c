@@ -1683,8 +1683,7 @@ int cr_service(bool daemon_mode)
 				exit(1);
 
 			close(server_fd);
-			if (init_opts())
-				exit(1);
+			init_opts();
 			ret = cr_service_work(sk);
 			close(sk);
 			exit(ret != 0);

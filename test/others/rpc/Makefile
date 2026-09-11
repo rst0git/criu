@@ -31,6 +31,7 @@ run: all
 		CRIU_PLUGIN_OPTION_MARKER="$(CURDIR)/build/_marker_plugin_option" \
 		bash -c "exec 200<>build/status; \
 		./criu service -v4 -W build --address criu_service.socket \
+		--plugin-option=test-plugin.default=service-value \
 		-d --pidfile pidfile -o service.log --status-fd 200; \
 		$(PYTHON) read.py build/status"
 	rm -f build/status

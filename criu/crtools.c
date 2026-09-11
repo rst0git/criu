@@ -150,7 +150,8 @@ int main(int argc, char *argv[], char *envp[])
 	if (argc < 2)
 		goto usage;
 
-	if (init_opts())
+	init_opts();
+	if (cr_plugin_options_init())
 		return 1;
 
 	ret = parse_options(argc, argv, &usage_error, &has_exec_cmd, state);

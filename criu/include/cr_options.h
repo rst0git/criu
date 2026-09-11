@@ -169,10 +169,6 @@ struct cr_options {
 	struct list_head inherit_fds;
 	struct list_head external;
 	struct list_head join_ns;
-	char **plugin_options;
-	int plugin_options_default_n;
-	int plugin_options_n;
-	int plugin_options_max;
 	char *libdir;
 	int use_page_server;
 	unsigned short port;
@@ -304,6 +300,6 @@ extern char *rpc_cfg_file;
 
 extern int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, int state);
 extern int check_options(void);
-extern int init_opts(void);
+extern void init_opts(void);
 
 #endif /* __CR_OPTIONS_H__ */

@@ -411,9 +411,8 @@ static int pre_parse(int argc, char **argv, bool *usage_error, bool *no_default_
 	return 0;
 }
 
-int init_opts(void)
+void init_opts(void)
 {
-	cr_plugin_options_free();
 	memset(&opts, 0, sizeof(opts));
 
 	/* Default options */
@@ -439,10 +438,6 @@ int init_opts(void)
 	opts.network_lock_method = NETWORK_LOCK_DEFAULT;
 	opts.ghost_fiemap = FIEMAP_DEFAULT;
 	opts.decompress_threads = 1;
-
-	if (cr_plugin_options_init())
-		return -1;
-	return 0;
 }
 
 bool deprecated_ok(char *what)
