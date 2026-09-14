@@ -1559,9 +1559,13 @@ def run_main(benchmark, argv=None, description=None):
           f"{decompress_threads_label(args.decompress_threads)}")
     print(f"  Server : {args.base_url}, model={args.model}, "
           f"{adapter.server_summary(args)}")
-    print(f"  Request: max_tokens={args.max_tokens}, "
-          f"temperature={args.temperature:g}, "
-          f"warmup_requests={args.warmup_requests}")
+    request_summary = getattr(adapter, "request_summary", None)
+    if request_summary is not None:
+        print(f"  Request: {request_summary(args)}")
+    else:
+        print(f"  Request: max_tokens={args.max_tokens}, "
+              f"temperature={args.temperature:g}, "
+              f"warmup_requests={args.warmup_requests}")
     if args.prompt_file:
         print(f"  Prompt : {args.prompt_file}")
     if args.ulimit:

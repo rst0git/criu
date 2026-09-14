@@ -110,6 +110,85 @@ The `original/` files are for the model's reference implementation and are not
 needed by SGLang. GPU startup and checkpoint/restore still require validation
 on the target host.
 
+### GLM-4.7-Flash
+
+Use the separate runner for
+[zai-org/GLM-4.7-Flash](https://huggingface.co/zai-org/GLM-4.7-Flash) on the single
+H200 host after the previous benchmark finishes:
+
+```bash
+cd /var/tmp/criu
+sudo ./contrib/compression-benchmark/run-glm47-flash-cuda-backends.sh
+```
+
+It pins model revision `7dd20894a642a0aa287e9827cb1a1f7f91386b67` and uses the
+native BF16 weights with the same SGLang image digest, 70% GPU memory budget,
+8192-token context and four-cycle schedule. The benchmark disables thinking
+through the model's chat template and uses the `glm45` reasoning parser with
+a 32-token output limit. Memory saver, CPU weight backup and restore validation
+remain enabled.
+
+Results are saved under `/var/tmp/glm47-flash-cuda-backends.*`, including
+`results.json`, `run.log` and `model-revision.txt`. An optional positional
+argument selects a new results directory, and `MODEL_REVISION` overrides the
+default model pin. To download the weights before the run:
+
+```bash
+sudo hf download zai-org/GLM-4.7-Flash \
+  --revision 7dd20894a642a0aa287e9827cb1a1f7f91386b67 \
+  --cache-dir /root/.cache/huggingface/hub
+```
+
+GPU startup and checkpoint/restore still require validation on the target host.
+
+### Additional NVIDIA models
+
+These separate runners use the same pinned SGLang image, 70% GPU memory budget,
+8192-token context and four-cycle schedule: one excluded warmup and one measured
+checkpoint/restore per backend. Thinking is disabled with a 32-token output
+limit. Memory saver, CPU weight backup and restore validation remain enabled.
+
+| Model | Runner in `contrib/compression-benchmark/` | Target GPU |
+| --- | --- | --- |
+| [Qwen3.6-35B-A3B-NVFP4](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4) | `run-qwen36-35b-a3b-nvfp4-cuda-backends.sh` | H200 |
+| [Gemma-4-31B-IT-NVFP4](https://huggingface.co/nvidia/Gemma-4-31B-IT-NVFP4) | `run-gemma4-31b-it-nvfp4-cuda-backends.sh` | H200 |
+| [Gemma-4-26B-A4B-NVFP4](https://huggingface.co/nvidia/Gemma-4-26B-A4B-NVFP4) | `run-gemma4-26b-a4b-nvfp4-cuda-backends.sh` | Blackwell B200/B300 |
+| [NVIDIA-Nemotron-3-Nano-4B-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16) | `run-nemotron3-nano-4b-bf16-cuda-backends.sh` | H200 |
+| [NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4) | `run-nemotron35-lightning-30b-a3b-nvfp4-cuda-backends.sh` | H200 |
+| [NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4) | `run-nemotron3-super-120b-a12b-nvfp4-cuda-backends.sh` | H200 |
+
+Each runner pins a full model revision; `--help` displays the pin. An optional
+`MODEL_REVISION` environment variable overrides it with another full commit hash.
+For example, run Lightning from the checkout on the benchmark host:
+
+```bash
+cd /var/tmp/criu
+sudo ./contrib/compression-benchmark/run-nemotron35-lightning-30b-a3b-nvfp4-cuda-backends.sh
+```
+
+Results go into a model-specific directory under `/var/tmp`, containing
+`results.json`, `run.log` and `model-revision.txt`. A positional argument selects
+a new results directory. To download weights before starting, use `hf download`
+with the runner's model and pinned `--revision`, and
+`--cache-dir /root/.cache/huggingface/hub` to populate the default benchmark cache.
+
+The Qwen, Lightning and Super checkpoints mix FP8 and NVFP4 weights and use
+`modelopt_mixed`. Their H200 runners select Marlin W4A16 kernels; the dense
+Gemma-31B runner also uses Marlin for NVFP4 linear layers. These paths use NVFP4
+weight storage with 16-bit activations, rather than native Blackwell FP4
+arithmetic. Nano-4B uses native BF16 weights. All three Nemotron runners use FA3
+attention, while the Gemma runners use Triton attention. Super's serialized
+weights occupy about 75 GiB; CPU backup and checkpoint archives also require
+substantial host RAM and disk space. Its runner caps concurrent requests at 8
+to bound the Mamba state pool while retaining the default FP32 state precision.
+
+**Gemma-4-26B-A4B-NVFP4 requires Blackwell with the pinned image.** Its gated GELU
+experts are unsupported by SGLang v0.5.17's H200 Marlin MoE path. That runner
+checks for SM100/SM103 at GPU index 0 before starting and selects the
+FlashInfer CUTLASS MoE backend. These launch settings have been checked against
+the pinned source; GPU startup and checkpoint/restore still require validation
+on the target host.
+
 ## Run
 
 Prerequisites: built CRIU and CUDA plugin, Podman/runc checkpoint support,
