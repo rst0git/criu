@@ -45,6 +45,32 @@ Otherwise the script resolves the current model commit once before starting
 and saves it. Use `--help` for prerequisites. The script is intended to be run
 by the user on the benchmark host; it does not connect over SSH itself.
 
+### Qwen3.8-27B-FP8
+
+Use the separate runner for
+[Qwen3.8-27B-FP8](https://huggingface.co/Qwen/Qwen3.8-27B-FP8) on the benchmark
+host after the previous benchmark finishes. It pins the model to revision
+`017b9c7af6b5689d5dd426a76e0bc077eb5ca20a`:
+
+```bash
+cd /var/tmp/criu
+# Optional: populate the root user's cache before timing the benchmark.
+sudo hf download Qwen/Qwen3.8-27B-FP8 \
+  --revision 017b9c7af6b5689d5dd426a76e0bc077eb5ca20a \
+  --cache-dir /root/.cache/huggingface/hub
+
+sudo ./contrib/compression-benchmark/run-qwen38-fp8-cuda-backends.sh
+```
+
+This keeps the same image, memory settings, validation and four-cycle schedule.
+SGLang reads FP8 quantization from the model configuration. CPU weight backup
+remains enabled to preserve weights across memory release and resumption.
+The new run saves its own results under `/var/tmp/qwen38-fp8-cuda-backends.*`.
+An optional positional argument selects a new results directory;
+`MODEL_REVISION` overrides the default model pin.
+The model uses the Qwen3.5 architecture supported by the pinned SGLang version;
+this FP8 checkpoint still needs an end-to-end validation run on the target host.
+
 ## Run
 
 Prerequisites: built CRIU and CUDA plugin, Podman/runc checkpoint support,
