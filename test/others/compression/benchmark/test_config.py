@@ -8,6 +8,7 @@ import io
 import os
 from pathlib import Path
 import signal
+import socket
 import sys
 import tarfile
 from types import SimpleNamespace
@@ -29,6 +30,16 @@ def load_script(name):
     return module
 
 
+@contextlib.contextmanager
+def listening_socket(host="127.0.0.1"):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.settimeout(2)
+        listener.bind((host, 0))
+        listener.listen(1)
+        yield listener
+
+
 class PodmanConfigTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -37,6 +48,60 @@ class PodmanConfigTests(unittest.TestCase):
         cls.common = cls.vllm.common
         cls.main = load_script("main.py")
         cls.block_cache = load_script("block-cache.py")
+
+    def test_server_port_rejects_existing_listener(self):
+        for host in ("127.0.0.1", "0.0.0.0"):
+            with self.subTest(host=host), listening_socket(host) as listener:
+                port = listener.getsockname()[1]
+                with self.assertRaisesRegex(
+                    RuntimeError, f"Server port {port} is already in use"
+                ):
+                    self.common.ensure_server_port_available(port)
+
+    def test_free_server_port_remains_available_after_probe(self):
+        with listening_socket() as listener:
+            port = listener.getsockname()[1]
+        self.common.ensure_server_port_available(port)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("0.0.0.0", port))
+            listener.listen(1)
+
+    def test_server_port_allows_time_wait_after_previous_trial(self):
+        with listening_socket() as listener:
+            port = listener.getsockname()[1]
+            with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
+                connection, _ = listener.accept()
+                with connection:
+                    # The server closes first, leaving TIME_WAIT on its port.
+                    connection.shutdown(socket.SHUT_WR)
+                    self.assertEqual(client.recv(1), b"")
+        self.common.ensure_server_port_available(port)
+
+    def test_server_port_collision_stops_before_container_launch(self):
+        benchmark = self.common.ServingBenchmark(SimpleNamespace(), "test")
+        with listening_socket() as listener:
+            args = SimpleNamespace(port=listener.getsockname()[1])
+            with (
+                mock.patch.object(self.common, "build_container_cmd") as build,
+                mock.patch.object(self.common, "run_cmd") as run,
+                mock.patch.object(self.common, "wait_health") as health,
+                mock.patch.object(self.common.os, "makedirs") as makedirs,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "already in use"):
+                    benchmark.start_container("new-benchmark", args)
+            build.assert_not_called()
+            run.assert_not_called()
+            health.assert_not_called()
+            makedirs.assert_not_called()
+            self.assertEqual(benchmark.state.started_containers, set())
+
+    def test_server_port_preserves_other_bind_errors(self):
+        error = OSError(errno.EACCES, "Permission denied")
+        with mock.patch.object(self.common.socket, "socket") as socket_factory:
+            socket_factory.return_value.__enter__.return_value.bind.side_effect = error
+            with self.assertRaises(OSError) as raised:
+                self.common.ensure_server_port_available(30000)
+        self.assertIs(raised.exception, error)
 
     def test_cuda_backend_options_replace_and_restore_configuration(self):
         import tempfile
@@ -1010,10 +1075,24 @@ log-file /tmp/criu.log"""
         )
         command = self.sglang.SglangAdapter.server_argv(args)
         self.assertIn("--enable-memory-saver", command)
+        self.assertIn("--enable-weights-cpu-backup", command)
+
+        args.sglang_arg = ["--enable-memory-saver", "--enable-weights-cpu-backup"]
+        command = self.sglang.SglangAdapter.server_argv(args)
+        self.assertEqual(command.count("--enable-memory-saver"), 1)
+        self.assertEqual(command.count("--enable-weights-cpu-backup"), 1)
+        args.sglang_arg = []
 
         args.memory_saver = False
         command = self.sglang.SglangAdapter.server_argv(args)
         self.assertNotIn("--enable-memory-saver", command)
+        self.assertNotIn("--enable-weights-cpu-backup", command)
+
+        args.accelerator = "cpu"
+        args.memory_saver = True
+        command = self.sglang.SglangAdapter.server_argv(args)
+        self.assertNotIn("--enable-memory-saver", command)
+        self.assertNotIn("--enable-weights-cpu-backup", command)
 
     def test_sglang_cuda_checkpoint_launch_job_wraps_server(self):
         args = SimpleNamespace(

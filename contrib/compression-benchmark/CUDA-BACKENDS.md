@@ -12,8 +12,11 @@ memory saver and compression settings. Each configuration has one excluded
 warmup trial followed by N measured trials. Order rotates each round (AB, BA).
 The model cache is warm after initial loading; this is not a cold-download test.
 Memory saver releases managed GPU allocations before checkpoint, matching the
-snapshot lifecycle; these results do not describe copying the full live VRAM
-footprint. Use the same storage and GPU assignment for all trials.
+snapshot lifecycle. CPU weight backup preserves model parameters in host memory,
+which CRIU includes in its images and SGLang copies back to the GPU on resume.
+Without that backup, release/resume discards the model weights. These results
+include weight storage and transfer, but do not describe copying the full live
+VRAM footprint. Use the same storage and GPU assignment for all trials.
 
 ## Minimal Qwen3.6-27B run
 
@@ -55,6 +58,8 @@ Avoid other checkpoint jobs: the benchmark locks and temporarily edits
 `/etc/criu/runc.conf`, then restores it on exit.
 It explicitly sets `libdir` and the backend in that file; no manual backend
 switching is needed. The CLI backend is named `cuda-checkpoint`, not `cli`.
+The server port must be unused before each trial; a leftover server would
+otherwise receive the benchmark's health, inference, and memory-control calls.
 
 Run from the checkout on the benchmark host. Resolve the model revision once
 and retain it alongside the results; reuse that revision for later comparisons.

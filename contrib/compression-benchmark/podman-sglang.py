@@ -5,13 +5,14 @@ Podman SGLang Checkpoint/Restore Benchmark
 Starts an SGLang container with Podman, validates inference, checkpoints it with
 Podman, removes it, restores it with Podman, and validates inference again.
 
-GPU runs enable SGLang's memory saver by default. Before checkpoint the driver
-pauses generation and releases SGLang-managed GPU allocations; after restore it
-resumes those allocations and generation. CUDA backend comparisons also launch
-the server in a CUDA checkpoint job, which establishes the shared job identity
-required for CUDA IPC checkpointing on r610 and later drivers. Memory release
-does not replace that identity. Pass --disable-memory-saver only for diagnostic
-comparisons.
+GPU runs enable SGLang's memory saver with CPU weight backup by default. Before
+checkpoint the driver pauses generation and releases SGLang-managed GPU
+allocations, preserving weights in host memory for CRIU to save. After restore
+it resumes those allocations, restores the weights, and continues generation.
+CUDA backend comparisons also launch the server in a CUDA checkpoint job,
+which establishes the shared job identity required for CUDA IPC checkpointing
+on r610 and later drivers. Memory release does not replace that identity.
+Pass --disable-memory-saver only for diagnostic comparisons.
 
 This benchmarks Podman's container checkpoint/restore path while varying CRIU
 memory-page compression through /etc/criu/runc.conf. Podman's own checkpoint
@@ -203,8 +204,11 @@ class SglangAdapter:
         ]
         if args.accelerator == "gpu":
             command += ["--mem-fraction-static", str(args.mem_fraction_static)]
-            if args.memory_saver and "--enable-memory-saver" not in args.sglang_arg:
-                command.append("--enable-memory-saver")
+            if args.memory_saver:
+                # Released weights are discarded unless CPU backup is enabled.
+                for flag in ("--enable-memory-saver", "--enable-weights-cpu-backup"):
+                    if flag not in args.sglang_arg:
+                        command.append(flag)
         else:
             command += ["--device", "cpu", "--disable-overlap-schedule"]
         if getattr(args, "model_revision", None):

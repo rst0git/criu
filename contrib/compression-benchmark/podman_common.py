@@ -14,6 +14,7 @@ import posixpath
 import shlex
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -1056,7 +1057,25 @@ def build_container_cmd(benchmark, name, args):
     return cmd
 
 
+def ensure_server_port_available(port):
+    # The containers use host networking and bind to all IPv4 interfaces.
+    # Allow TIME_WAIT sockets from a previous trial, but reject a live listener
+    # before its health response could be mistaken for the new container's.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("0.0.0.0", port))
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                raise
+            raise RuntimeError(
+                f"Server port {port} is already in use; stop the existing "
+                "server or choose a different --port."
+            ) from error
+
+
 def start_container(benchmark, name, args):
+    ensure_server_port_available(args.port)
     os.makedirs(args.hf_cache, exist_ok=True)
     cmd = build_container_cmd(benchmark, name, args)
 
