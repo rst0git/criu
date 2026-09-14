@@ -55,7 +55,7 @@ models=(
     'nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8|744b1880a37996c5d56bf454ae164dfd74d77c4e|'
     'nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16|a9904d24bcc1d289a1950fa9d2b978c47cf903b9|'
     'Qwen/Qwen3.6-35B-A3B-FP8|95a723d08a9490559dae23d0cff1d9466213d989|'
-    'Qwen/Qwen3.6-27B||'
+    'Qwen/Qwen3.6-27B|6a9e13bd6fc8f0983b9b99948120bc37f49c13e9|'
     'Qwen/Qwen3.8-27B-FP8|017b9c7af6b5689d5dd426a76e0bc077eb5ca20a|'
 )
 

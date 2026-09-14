@@ -60,8 +60,8 @@ compatibility behavior and initialize every available plugin during restore.
 For performance investigations, enable timing records in the CRIU log:
 
 ```
-criu dump ... -v3 --plugin-option=cuda_plugin.timings=true
-criu restore ... -v3 --plugin-option=cuda_plugin.timings=true
+criu dump ... -v4 --plugin-option=cuda_plugin.timings=true
+criu restore ... -v4 --plugin-option=cuda_plugin.timings=true
 ```
 
 The option accepts `true` or `false` and defaults to `false`. Each completed
