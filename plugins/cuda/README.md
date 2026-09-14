@@ -71,21 +71,28 @@ The direct backend does not require CUDA toolkit headers at build time. The
 CUDA 13.0 restore ABI on older drivers merely because checkpoint symbols are
 present.
 
-The CLI backend executes `cuda-checkpoint` for each request. It keeps CRIU
-in control of ptrace and checks for a stop or exit of the CUDA restore
-thread while waiting for the helper. A fault is reported with the operation, process, thread, and signal.
-Each request also has a 300-second timeout, adjustable for larger workloads:
+During checkpoint and restore, the Driver API backend runs CUDA operations in
+one worker thread. CRIU's tracing thread waits for the CUDA restore thread and
+forwards its signals, allowing a fault to reach the driver instead of leaving
+both the target and the API call blocked. When the operation completes, the
+worker notifies the tracing thread to interrupt the target again. Other Driver
+API calls run directly. This handles ptrace signal stops; it does not impose a
+deadline on an arbitrary hang inside libcuda.
+
+The CLI backend executes `cuda-checkpoint` for each request and monitors the
+CUDA restore thread while waiting. Each CLI request has a 300-second timeout,
+adjustable for larger workloads:
 
 ```
 --plugin-option=cuda_plugin.timeout=600
 ```
 
 The value must be a positive number of seconds. It is separate from CRIU's
-`--timeout`, which is also passed to CUDA's lock operation. After a helper
-failure or timeout, the plugin aborts and skips further CUDA operations during
+`--timeout`, which is passed to CUDA's lock operation by both backends. After a
+fatal restore-thread failure, the plugin skips further CUDA operations during
 rollback. GPU state may remain locked or partially checkpointed; the application
-may need to be restarted. The plugin cannot recover a CUDA job after a driver
-fault.
+may need to be restarted. The plugin cannot recover a CUDA job after a fatal
+driver fault.
 
 The plugin contains independently authored declarations for the CUDA checkpoint
 argument structures because CRIU does not build against the CUDA toolkit
@@ -110,9 +117,9 @@ plugin will re-wake when needed.
 
 # Testing
 
-The CPU-only regression tests exercise the CLI backend with the mock
-`cuda-checkpoint` and real ptrace stops, including faults, timeouts, helper
-exits, and rollback:
+The CPU-only regression tests exercise both backends with mock CUDA APIs and
+real ptrace stops, including Driver API signal forwarding, CLI timeouts and
+helper exits, and rollback:
 
 ```
 make cuda_plugin
