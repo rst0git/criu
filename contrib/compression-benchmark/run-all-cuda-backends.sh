@@ -5,16 +5,19 @@ usage() {
     cat <<'HELP'
 Usage: run-all-cuda-backends.sh [--iterations N] [--results-root DIR]
        [--skip-voicechat] [--voicechat-model-repo DIR --voicechat-audio FILE]
-       [--commit]
+       [--no-download-models] [--commit]
 
-Run all checked-in CUDA backend benchmarks sequentially. Results are stored in
-the checkout. --commit records only complete results and never pushes remotely.
+Run all checked-in CUDA backend benchmarks sequentially. Model revisions are
+downloaded into the benchmark cache before the offline trials. Results are
+stored in the checkout. --commit records only complete results and never
+pushes remotely.
 HELP
 }
 
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_dir"
 iterations=1; results_root=; skip_voicechat=false; commit_results=false
+download_models=true
 voicechat_model_repo=; voicechat_audio=
 while (($#)); do
     case "$1" in
@@ -23,6 +26,7 @@ while (($#)); do
         --voicechat-model-repo) (($# >= 2)) || exit 2; voicechat_model_repo=$2; shift 2 ;;
         --voicechat-audio) (($# >= 2)) || exit 2; voicechat_audio=$2; shift 2 ;;
         --skip-voicechat) skip_voicechat=true; shift ;;
+        --no-download-models) download_models=false; shift ;;
         --commit) commit_results=true; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -40,6 +44,34 @@ if [[ -z $results_root ]]; then results_root="benchmark-results/all-cuda-backend
 if [[ $results_root != /* ]]; then results_root="$repo_dir/$results_root"; fi
 results_root=$(readlink -m -- "$results_root")
 [[ ! -e $results_root ]] || { echo "Results directory exists: $results_root" >&2; exit 2; }
+
+models=(
+    'google/gemma-4-26B-A4B-it|4d7ae4984b7db7de8f8457170b3f1a419ee76d52|'
+    'google/gemma-4-31B-it|842da3794eaa0b77d5f08bae87a17459d91ff475|'
+    'zai-org/GLM-OCR|2e85a62840ccac27daa451df36c736c4636b8628|'
+    'zai-org/GLM-4.7-Flash|7dd20894a642a0aa287e9827cb1a1f7f91386b67|'
+    'openai/gpt-oss-120b|b5c939de8f754692c1647ca79fbf85e8c1e70f8a|original/*'
+    'nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16|dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f|'
+    'nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8|744b1880a37996c5d56bf454ae164dfd74d77c4e|'
+    'nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16|a9904d24bcc1d289a1950fa9d2b978c47cf903b9|'
+    'Qwen/Qwen3.6-35B-A3B-FP8|95a723d08a9490559dae23d0cff1d9466213d989|'
+    'Qwen/Qwen3.6-27B||'
+    'Qwen/Qwen3.8-27B-FP8|017b9c7af6b5689d5dd426a76e0bc077eb5ca20a|'
+)
+
+if [[ $download_models == true ]]; then
+    command -v hf >/dev/null || { echo "hf CLI is required for model preparation" >&2; exit 1; }
+    hf_cache=${HF_HOME:-/root/.cache/huggingface}/hub
+    for specification in "${models[@]}"; do
+        IFS='|' read -r model revision exclude <<<"$specification"
+        download=(hf download "$model" --cache-dir "$hf_cache")
+        [[ -n $revision ]] && download+=(--revision "$revision")
+        [[ -n $exclude ]] && download+=(--exclude "$exclude")
+        echo "Preparing $model${revision:+@$revision}"
+        "${download[@]}"
+    done
+fi
+
 mkdir -p -- "$results_root"
 exec > >(tee "$results_root/run.log") 2>&1
 
