@@ -1,6 +1,6 @@
-/* CPU-only integration tests for guarded cuda-checkpoint calls.
+/* CPU-only integration tests for guarded CUDA backend calls.
  *
- * Run the production CLI backend against the mock and a real ptrace target. The
+ * Run the production backend against libcuda.c and a real ptrace target. The
  * fake restore thread faults only after the checkpoint API starts waiting.
  */
 #include <assert.h>
@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include <compel/infect.h>
+#include <compel/log.h>
 
 #include "cr_options.h"
 #include "cuda_plugin.h"
@@ -35,6 +36,11 @@ static unsigned int interrupts;
 static bool fault_before_interrupt;
 static bool group_stop_before_interrupt;
 static volatile sig_atomic_t criu_timed_out;
+
+int log_get_fd(void)
+{
+	return fileno(log_file);
+}
 
 int close_fds(int minfd)
 {
@@ -63,6 +69,35 @@ void print_on_level(unsigned int loglevel, const char *format, ...)
 	vfprintf(log_file, format, args);
 	va_end(args);
 	fflush(log_file);
+}
+
+static void compel_test_log(unsigned int level, const char *format, va_list args)
+{
+	vfprintf(log_file, format, args);
+}
+
+int parse_pid_status(pid_t pid, struct seize_task_status *ss, void *data)
+{
+	char path[64], line[256];
+	FILE *file;
+
+	memset(ss, 0, sizeof(*ss));
+	snprintf(path, sizeof(path), "/proc/%d/status", pid);
+	file = fopen(path, "r");
+	if (!file) {
+		if (errno != ENOENT)
+			return -1;
+		ss->state = 'Z';
+		return 0;
+	}
+	while (fgets(line, sizeof(line), file)) {
+		sscanf(line, "State:\t%c", &ss->state);
+		sscanf(line, "SigPnd:\t%llx", &ss->sigpnd);
+		sscanf(line, "ShdPnd:\t%llx", &ss->shdpnd);
+		sscanf(line, "SigBlk:\t%llx", &ss->sigblk);
+	}
+	fclose(file);
+	return 0;
 }
 
 int cuda_plugin_add_inventory(void)
@@ -187,7 +222,7 @@ static off_t file_size(const char *path)
 	return status.st_size;
 }
 
-static pid_t check_api_calls(const char *path, bool completed)
+static pid_t check_api_calls(const char *path, bool completed, bool driver)
 {
 	FILE *file = fopen(path, "r");
 	char operation[32];
@@ -200,9 +235,13 @@ static pid_t check_api_calls(const char *path, bool completed)
 
 		if (worker < 0)
 			worker = caller;
-		assert(waitpid(caller, &status, __WALL | WNOHANG) == -1 && errno == ECHILD);
-		assert(kill(caller, 0) == -1 && errno == ESRCH);
-		assert(caller != getpid());
+		if (driver)
+			assert(caller == worker);
+		else {
+			assert(waitpid(caller, &status, __WALL | WNOHANG) == -1 && errno == ECHILD);
+			assert(kill(caller, 0) == -1 && errno == ESRCH);
+		}
+		assert((caller == getpid()) == driver);
 		checkpoints += !strcmp(operation, "checkpoint");
 		restores += !strcmp(operation, "restore");
 		unlocks += !strcmp(operation, "unlock");
@@ -235,7 +274,10 @@ static void run_case(const char *directory, const char *behavior,
 {
 	char marker[512], trigger[512], log_path[512], state_path[512];
 	bool completed = !strcmp(behavior, "success") || !strcmp(behavior, "api-error");
+	bool driver = backend == &cuda_driver_backend;
 	k_rtsigset_t original_mask, restored_mask;
+	sigset_t original_tracer_mask, tracer_mask;
+	struct sigaction original_action, action;
 	struct timespec start, end;
 	pid_t pid, worker;
 	off_t before_cleanup;
@@ -250,8 +292,11 @@ static void run_case(const char *directory, const char *behavior,
 	assert(setenv("CRIU_CUDA_MOCK_CHECKPOINT_BEHAVIOR", behavior, 1) == 0);
 	assert(setenv("CRIU_CUDA_MOCK_STATE_FILE", state_path, 1) == 0);
 	assert(unsetenv("CRIU_CUDA_MOCK_CHECKPOINT_ERROR_AFTER_TRANSITION") == 0);
+	assert(unsetenv("CRIU_CUDA_MOCK_INIT_HANG") == 0);
 	if (!strcmp(behavior, "api-error"))
 		assert(setenv("CRIU_CUDA_MOCK_CHECKPOINT_ERROR_AFTER_TRANSITION", "1", 1) == 0);
+	if (!strcmp(behavior, "init-hang"))
+		assert(setenv("CRIU_CUDA_MOCK_INIT_HANG", "1", 1) == 0);
 	if (!strcmp(behavior, "criu-timeout")) {
 		assert(setenv("CRIU_CUDA_MOCK_CHECKPOINT_BEHAVIOR", "hang", 1) == 0);
 		cuda_plugin_timeout = 30;
@@ -267,6 +312,13 @@ static void run_case(const char *directory, const char *behavior,
 	fault_before_interrupt = !strcmp(behavior, "late-fault");
 	group_stop_before_interrupt = !strcmp(behavior, "late-group-stop");
 	assert(ptrace(PTRACE_GETSIGMASK, pid, sizeof(original_mask), &original_mask) == 0);
+	if (driver && !strcmp(behavior, "api-error")) {
+		sigemptyset(&tracer_mask);
+		sigaddset(&tracer_mask, SIGCHLD);
+		assert(sigprocmask(SIG_BLOCK, &tracer_mask, NULL) == 0);
+	}
+	assert(sigprocmask(SIG_SETMASK, NULL, &original_tracer_mask) == 0);
+	assert(sigaction(SIGCHLD, NULL, &original_action) == 0);
 	assert(clock_gettime(CLOCK_MONOTONIC, &start) == 0);
 	if (!strcmp(behavior, "criu-timeout")) {
 		struct sigaction action = { .sa_handler = freezing_timeout };
@@ -275,15 +327,47 @@ static void run_case(const char *directory, const char *behavior,
 		alarm(1);
 	}
 	ret = backend->checkpoint_devices(pid);
+	if (!strcmp(behavior, "init-hang")) {
+		assert(ret == 0);
+		ret = backend->resume_devices_late(pid);
+	}
 	assert(clock_gettime(CLOCK_MONOTONIC, &end) == 0);
+	if (driver) {
+		int threads = 0, signal, attempt;
+
+		/* The joined thread may still be finishing kernel task teardown. */
+		for (attempt = 0; attempt < 1000; attempt++) {
+			DIR *tasks = opendir("/proc/self/task");
+			struct dirent *entry;
+
+			assert(tasks);
+			threads = 0;
+			while ((entry = readdir(tasks)))
+				threads += atoi(entry->d_name) > 0;
+			closedir(tasks);
+			if (threads == 1)
+				break;
+			usleep(1000);
+		}
+		assert(threads == 1);
+		assert(sigprocmask(SIG_SETMASK, NULL, &tracer_mask) == 0);
+		assert(sigaction(SIGCHLD, NULL, &action) == 0);
+		assert(action.sa_handler == original_action.sa_handler);
+		for (signal = 1; signal < NSIG; signal++)
+			assert(sigismember(&tracer_mask, signal) == sigismember(&original_tracer_mask, signal));
+	}
 	assert(end.tv_sec - start.tv_sec < 5);
 	assert((ret == 0) == !strcmp(behavior, "success"));
-	assert(ptrace(PTRACE_GETSIGMASK, pid, sizeof(restored_mask), &restored_mask) == 0);
-	assert(!memcmp(&original_mask, &restored_mask, sizeof(original_mask)));
+	if (!driver || completed) {
+		assert(ptrace(PTRACE_GETSIGMASK, pid, sizeof(restored_mask), &restored_mask) == 0);
+		assert(!memcmp(&original_mask, &restored_mask, sizeof(original_mask)));
+	}
 	if (!strcmp(behavior, "success")) {
 		assert(backend->resume_devices_late(pid) == 0);
 	} else if (!completed) {
-		if (!strcmp(behavior, "fault") || !strcmp(behavior, "late-fault")) {
+		if (driver) {
+			check_log("failed during Driver API operation");
+		} else if (!strcmp(behavior, "fault") || !strcmp(behavior, "late-fault")) {
 			/* The in-call fault was already consumed by the worker monitor. */
 			assert(interrupts == (unsigned int)!strcmp(behavior, "late-fault"));
 			if (!strcmp(behavior, "fault")) {
@@ -292,7 +376,7 @@ static void run_case(const char *directory, const char *behavior,
 			} else {
 				check_log("stopped unexpectedly with signal 11");
 			}
-		} else if (!strcmp(behavior, "hang")) {
+		} else if (!strcmp(behavior, "hang") || !strcmp(behavior, "init-hang")) {
 			check_log("timed out");
 		} else if (!strcmp(behavior, "criu-timeout")) {
 			assert(criu_timed_out);
@@ -300,6 +384,8 @@ static void run_case(const char *directory, const char *behavior,
 		} else if (!strcmp(behavior, "late-group-stop")) {
 			assert(interrupts == 1);
 			check_log("stopped unexpectedly with signal 19");
+		} else if (!strcmp(behavior, "exit")) {
+			check_log("exited with status 77");
 		} else {
 			check_log("unexpectedly signaled with 9");
 		}
@@ -309,13 +395,18 @@ static void run_case(const char *directory, const char *behavior,
 	assert((ret == 0) == completed);
 	if (!completed)
 		assert(file_size(marker) == before_cleanup); /* No API reentry during rollback. */
-	worker = check_api_calls(marker, completed);
+	worker = check_api_calls(marker, completed, driver);
 	backend->fini(CR_PLUGIN_STAGE__DUMP, ret);
 	assert(waitpid(worker, &status, __WALL | WNOHANG) == -1 && errno == ECHILD);
-	assert(kill(worker, 0) == -1 && errno == ESRCH);
-	assert(kill(pid, SIGKILL) == 0);
-	assert(waitpid(pid, &status, __WALL) == pid);
-	assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL);
+	if (!driver)
+		assert(kill(worker, 0) == -1 && errno == ESRCH);
+	if (driver && (!strcmp(behavior, "fault") || !strcmp(behavior, "late-fault"))) {
+		assert(kill(pid, 0) == -1 && errno == ESRCH);
+	} else {
+		assert(kill(pid, SIGKILL) == 0);
+		assert(waitpid(pid, &status, __WALL) == pid);
+		assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL);
+	}
 	fclose(log_file);
 	unlink(marker);
 	unlink(trigger);
@@ -327,36 +418,45 @@ int main(void)
 {
 	char directory[] = "/tmp/criu-cuda-backend-guard-XXXXXX";
 	const char *cases[] = { "success", "api-error", "fault", "late-fault", "late-group-stop",
-				"hang", "criu-timeout", "signal" };
-	const struct cuda_plugin_backend *backend = &cuda_cli_backend;
-	unsigned int i;
+				"hang", "criu-timeout", "exit", "init-hang" };
+	const struct cuda_plugin_backend *backends[] = { &cuda_driver_backend, &cuda_cli_backend };
+	unsigned int i, j;
 
 	assert(mkdtemp(directory));
+	compel_log_init(compel_test_log, 4);
 	opts.final_state = TASK_DEAD;
 	opts.timeout = 1;
-	for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-		pid_t child;
-		int status;
+	for (j = 0; j < sizeof(backends) / sizeof(backends[0]); j++) {
+		for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+			pid_t child;
+			int status;
+			const char *behavior = !j || strcmp(cases[i], "exit") ? cases[i] : "signal";
 
-		child = fork();
-		assert(child >= 0);
-		if (!child) {
-			assert(setpgid(0, 0) == 0);
-			/* Bound regressions that leave a call or waitpid blocked. */
-			alarm(8);
-			run_case(directory, cases[i], backend);
-			_exit(0);
-		}
-		assert(waitpid(child, &status, 0) == child);
-		/* Kill any target or helper leaked by an assertion or alarm. */
-		kill(-child, SIGKILL);
-		if (!WIFEXITED(status) || WEXITSTATUS(status)) {
-			fprintf(stderr, "%s guard case %s failed (status %#x), artifacts: %s\n",
-				backend->name, cases[i], status, directory);
-			return 1;
+			if (!j && (!strcmp(behavior, "hang") || !strcmp(behavior, "criu-timeout") ||
+				   !strcmp(behavior, "exit") || !strcmp(behavior, "init-hang")))
+				continue; /* Threads handle tracee faults, not arbitrary library hangs. */
+			if (j && !strcmp(behavior, "init-hang"))
+				continue; /* cuInit is a Driver API operation. */
+			child = fork();
+			assert(child >= 0);
+			if (!child) {
+				assert(setpgid(0, 0) == 0);
+				/* Bound regressions that leave an API call or waitpid blocked. */
+				alarm(8);
+				run_case(directory, behavior, backends[j]);
+				_exit(0);
+			}
+			assert(waitpid(child, &status, 0) == child);
+			/* Kill any target or worker leaked by an assertion or alarm. */
+			kill(-child, SIGKILL);
+			if (!WIFEXITED(status) || WEXITSTATUS(status)) {
+				fprintf(stderr, "%s guard case %s failed (status %#x), artifacts: %s\n",
+					backends[j]->name, behavior, status, directory);
+				return 1;
+			}
 		}
 	}
 	assert(rmdir(directory) == 0);
-	puts("CUDA CLI guard regression tests PASS");
+	puts("CUDA backend guard regression tests PASS");
 	return 0;
 }
