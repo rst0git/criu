@@ -1,0 +1,239 @@
+{
+  "system": {
+    "kernel": "5.15.0-190-generic",
+    "arch": "x86_64",
+    "cpus": 16,
+    "cpu": "Intel(R) Xeon(R) Platinum 8468",
+    "memory_mb": 201289,
+    "podman": "podman version 6.1.1",
+    "criu": "Version: 4.2.1\nGitID: v4.0-726-g33988cc00",
+    "gpus": [
+      "NVIDIA H200"
+    ],
+    "cuda_benchmark": {
+      "binaries": {
+        "criu": {
+          "path": "/var/tmp/criu/criu/criu",
+          "sha256": "2c205523a6f3086ecaa2f9dccba770f0693952db2489f6137b32f734698239c7"
+        },
+        "plugin": {
+          "path": "/var/tmp/criu/plugins/cuda/cuda_plugin.so",
+          "sha256": "f7a1f6ecaa65a6c23edeee1a5f0c3d2e244073fa2cfa12d35999f13b7ea46e6b"
+        },
+        "cuda-checkpoint": {
+          "path": "/usr/bin/cuda-checkpoint",
+          "sha256": "707fa7f54136824d6c1d6dd724b9b1717610f831033c00d06da474de363a06db"
+        },
+        "cuda-checkpoint-launcher": {
+          "path": "/usr/bin/cuda-checkpoint",
+          "sha256": "707fa7f54136824d6c1d6dd724b9b1717610f831033c00d06da474de363a06db"
+        }
+      },
+      "driver": "GPU-e2dbc502-5b5a-da2b-3514-bd7521eee666, NVIDIA H200, 610.57.04",
+      "runc": "runc version 1.5.1\ncommit: v1.5.1-0-g8f2685a47\nspec: 1.3.0\ngo: go1.25.12\nlibseccomp: 2.6.0\nlibpathrs: 0.2.5"
+    }
+  },
+  "framework": "sglang",
+  "config": {
+    "accelerator": "gpu",
+    "image": "docker.io/lmsysorg/sglang:v0.5.17-cu130-runtime@sha256:3ea7c6d74312d964edbcf9b3819425ea42117eb967ef1cfec632a70c926027df",
+    "model": "Qwen/Qwen3.6-27B",
+    "served_model_name": null,
+    "model_revision": "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9",
+    "sglang_model_arg": "model-path",
+    "port": 30000,
+    "base_url": "http://127.0.0.1:30000",
+    "health_path": "/health",
+    "container_name": "sglang-criu-bench",
+    "iterations": 1,
+    "modes": [
+      "uncompressed"
+    ],
+    "block_sizes": [
+      4096,
+      65536,
+      262144,
+      1048576
+    ],
+    "compress_acceleration": 1,
+    "decompress_threads": null,
+    "runc_conf": "/etc/criu/runc.conf",
+    "archive_compression": "none",
+    "criu_libdir": "/var/tmp/criu/plugins/cuda",
+    "hf_cache": "/root/.cache/huggingface",
+    "gpu_device": "nvidia.com/gpu=all",
+    "security_opt": "label=disable",
+    "cuda_visible_devices": "0",
+    "shm_size": "32g",
+    "mem_fraction_static": 0.7,
+    "max_total_tokens": 8192,
+    "context_length": 8192,
+    "tensor_parallel_size": 1,
+    "prompt": "Say hello in one short sentence.",
+    "prompt_file": null,
+    "max_tokens": 32,
+    "temperature": 0,
+    "seed": 42,
+    "chat_extra_json": {
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "enable_thinking": false,
+    "warmup_requests": 0,
+    "wait_seconds": 3600,
+    "request_timeout": 180,
+    "env": [],
+    "volume": [],
+    "run_arg": [],
+    "ulimit": [],
+    "cuda_backends": [
+      "driver-api",
+      "cuda-checkpoint"
+    ],
+    "memory_saver": true,
+    "cuda_checkpoint_launch_job": true,
+    "cuda_checkpoint_binary": "/usr/bin/cuda-checkpoint",
+    "sglang_arg": [
+      "--disable-radix-cache"
+    ],
+    "print_stats": true,
+    "keep_checkpoint_files": false,
+    "keep_running": false,
+    "json": "/var/tmp/qwen36-cuda-backends.j9YAlz88/results.json"
+  },
+  "results": {
+    "driver-api / Uncompressed": [
+      {
+        "archive_size": 74419273216,
+        "inventory_compress_mode": 0,
+        "checkpoint_wall_us": 325482575,
+        "restore_wall_us": 183449893,
+        "server_start_to_health_us": 221397432,
+        "cold_start_to_first_token_us": 221446887,
+        "cold_start_to_response_complete_us": 221473642,
+        "cold_start_request_ttft_us": 49364,
+        "restore_to_health_us": 185519347,
+        "restore_to_first_token_us": 185577802,
+        "restore_to_response_complete_us": 185604734,
+        "restore_request_ttft_us": 58353,
+        "pre_request_us": 83637,
+        "post_request_us": 85286,
+        "checkpoint_stats": "{\n    \"podman_checkpoint_duration\": 325442228,\n    \"container_statistics\": [\n        {\n            \"Id\": \"9c3af62872115447b707f897560c228abdbbcb8664a886392ec18c6811cb3015\",\n            \"runtime_checkpoint_duration\": 119078875,\n            \"criu_statistics\": {\n                \"freezing_time\": 13970,\n                \"frozen_time\": 118964220,\n                \"memdump_time\": 35825584,\n                \"memwrite_time\": 34139284,\n                \"pages_scanned\": 113643503,\n                \"pages_written\": 4699982\n            }\n        }\n    ]\n}",
+        "restore_stats": "{\n    \"podman_restore_duration\": 157582171,\n    \"container_statistics\": [\n        {\n            \"Id\": \"9c3af62872115447b707f897560c228abdbbcb8664a886392ec18c6811cb3015\",\n            \"runtime_restore_duration\": 36978235,\n            \"criu_statistics\": {\n                \"pages_compared\": 1386201,\n                \"pages_skipped_cow\": 1376450,\n                \"forking_time\": 51990,\n                \"restore_time\": 28997561,\n                \"pages_restored\": 3323532\n            }\n        }\n    ]\n}",
+        "validation_response_sha256": "334d016f755cd6dc58c53a86e183882f8ec14f52fb05345887c8a5edd42c87b7",
+        "cache_policy": "warm",
+        "valid": true,
+        "framework": "sglang",
+        "container_name": null,
+        "trial": 4,
+        "configuration": {
+          "mode": "uncompressed",
+          "block_size": 0,
+          "cuda_backend": "driver-api",
+          "criu_libdir": "/var/tmp/criu/plugins/cuda"
+        }
+      }
+    ],
+    "cuda-checkpoint / Uncompressed": [
+      {
+        "archive_size": 74455401472,
+        "inventory_compress_mode": 0,
+        "checkpoint_wall_us": 329022970,
+        "restore_wall_us": 262433254,
+        "server_start_to_health_us": 209917901,
+        "cold_start_to_first_token_us": 209966088,
+        "cold_start_to_response_complete_us": 209993360,
+        "cold_start_request_ttft_us": 48079,
+        "restore_to_health_us": 264564140,
+        "restore_to_first_token_us": 264633258,
+        "restore_to_response_complete_us": 264658556,
+        "restore_request_ttft_us": 69020,
+        "pre_request_us": 81464,
+        "post_request_us": 94318,
+        "checkpoint_stats": "{\n    \"podman_checkpoint_duration\": 328982559,\n    \"container_statistics\": [\n        {\n            \"Id\": \"5b6e920268ab50d82fbe9482dfc36b07dff8ce1bae3e22e48d4193e94de43425\",\n            \"runtime_checkpoint_duration\": 122589445,\n            \"criu_statistics\": {\n                \"freezing_time\": 775972,\n                \"frozen_time\": 121725596,\n                \"memdump_time\": 35956092,\n                \"memwrite_time\": 34336190,\n                \"pages_scanned\": 113643797,\n                \"pages_written\": 4708803\n            }\n        }\n    ]\n}",
+        "restore_stats": "{\n    \"podman_restore_duration\": 237336706,\n    \"container_statistics\": [\n        {\n            \"Id\": \"5b6e920268ab50d82fbe9482dfc36b07dff8ce1bae3e22e48d4193e94de43425\",\n            \"runtime_restore_duration\": 113031076,\n            \"criu_statistics\": {\n                \"pages_compared\": 1386596,\n                \"pages_skipped_cow\": 1376897,\n                \"forking_time\": 52977,\n                \"restore_time\": 101326798,\n                \"pages_restored\": 3331906\n            }\n        }\n    ]\n}",
+        "validation_response_sha256": "334d016f755cd6dc58c53a86e183882f8ec14f52fb05345887c8a5edd42c87b7",
+        "cache_policy": "warm",
+        "valid": true,
+        "framework": "sglang",
+        "container_name": null,
+        "trial": 3,
+        "configuration": {
+          "mode": "uncompressed",
+          "block_size": 0,
+          "cuda_backend": "cuda-checkpoint",
+          "criu_libdir": "/var/tmp/criu/plugins/cuda"
+        }
+      }
+    ]
+  },
+  "warmups": {
+    "driver-api / Uncompressed": [
+      {
+        "archive_size": 74452694528,
+        "inventory_compress_mode": 0,
+        "checkpoint_wall_us": 438330583,
+        "restore_wall_us": 377725334,
+        "server_start_to_health_us": 121224305,
+        "cold_start_to_first_token_us": 121271329,
+        "cold_start_to_response_complete_us": 121298552,
+        "cold_start_request_ttft_us": 46915,
+        "restore_to_health_us": 379960081,
+        "restore_to_first_token_us": 380158332,
+        "restore_to_response_complete_us": 380181236,
+        "restore_request_ttft_us": 198161,
+        "pre_request_us": 80939,
+        "post_request_us": 221065,
+        "checkpoint_stats": "{\n    \"podman_checkpoint_duration\": 438290861,\n    \"container_statistics\": [\n        {\n            \"Id\": \"6fc5929faa4982f7ff6a36750e37388cd00dcb477a599639dd32f83f2e68ff83\",\n            \"runtime_checkpoint_duration\": 121780792,\n            \"criu_statistics\": {\n                \"freezing_time\": 13436,\n                \"frozen_time\": 121582407,\n                \"memdump_time\": 35559108,\n                \"memwrite_time\": 33935484,\n                \"pages_scanned\": 113659366,\n                \"pages_written\": 4708142\n            }\n        }\n    ]\n}",
+        "restore_stats": "{\n    \"podman_restore_duration\": 352632803,\n    \"container_statistics\": [\n        {\n            \"Id\": \"6fc5929faa4982f7ff6a36750e37388cd00dcb477a599639dd32f83f2e68ff83\",\n            \"runtime_restore_duration\": 148694841,\n            \"criu_statistics\": {\n                \"pages_compared\": 1386297,\n                \"pages_skipped_cow\": 1376585,\n                \"forking_time\": 88633,\n                \"restore_time\": 132873448,\n                \"pages_restored\": 3331557\n            }\n        }\n    ]\n}",
+        "validation_response_sha256": "334d016f755cd6dc58c53a86e183882f8ec14f52fb05345887c8a5edd42c87b7",
+        "cache_policy": "warm",
+        "valid": true,
+        "framework": "sglang",
+        "container_name": null,
+        "trial": 1,
+        "configuration": {
+          "mode": "uncompressed",
+          "block_size": 0,
+          "cuda_backend": "driver-api",
+          "criu_libdir": "/var/tmp/criu/plugins/cuda"
+        }
+      }
+    ],
+    "cuda-checkpoint / Uncompressed": [
+      {
+        "archive_size": 74419858944,
+        "inventory_compress_mode": 0,
+        "checkpoint_wall_us": 329568898,
+        "restore_wall_us": 260766332,
+        "server_start_to_health_us": 208014091,
+        "cold_start_to_first_token_us": 208062801,
+        "cold_start_to_response_complete_us": 208089597,
+        "cold_start_request_ttft_us": 48603,
+        "restore_to_health_us": 262823006,
+        "restore_to_first_token_us": 262877084,
+        "restore_to_response_complete_us": 262903969,
+        "restore_request_ttft_us": 53976,
+        "pre_request_us": 83094,
+        "post_request_us": 80862,
+        "checkpoint_stats": "{\n    \"podman_checkpoint_duration\": 329528673,\n    \"container_statistics\": [\n        {\n            \"Id\": \"4815cd9f9c4d0b1378b491ce12ee15210db36b2caf192115caef39966619c94b\",\n            \"runtime_checkpoint_duration\": 123421217,\n            \"criu_statistics\": {\n                \"freezing_time\": 778684,\n                \"frozen_time\": 122555353,\n                \"memdump_time\": 35778016,\n                \"memwrite_time\": 34138219,\n                \"pages_scanned\": 113643153,\n                \"pages_written\": 4700127\n            }\n        }\n    ]\n}",
+        "restore_stats": "{\n    \"podman_restore_duration\": 235940131,\n    \"container_statistics\": [\n        {\n            \"Id\": \"4815cd9f9c4d0b1378b491ce12ee15210db36b2caf192115caef39966619c94b\",\n            \"runtime_restore_duration\": 112884753,\n            \"criu_statistics\": {\n                \"pages_compared\": 1386246,\n                \"pages_skipped_cow\": 1376593,\n                \"forking_time\": 50660,\n                \"restore_time\": 101653547,\n                \"pages_restored\": 3323534\n            }\n        }\n    ]\n}",
+        "validation_response_sha256": "334d016f755cd6dc58c53a86e183882f8ec14f52fb05345887c8a5edd42c87b7",
+        "cache_policy": "warm",
+        "valid": true,
+        "framework": "sglang",
+        "container_name": null,
+        "trial": 2,
+        "configuration": {
+          "mode": "uncompressed",
+          "block_size": 0,
+          "cuda_backend": "cuda-checkpoint",
+          "criu_libdir": "/var/tmp/criu/plugins/cuda"
+        }
+      }
+    ]
+  },
+  "failures": [],
+  "status": "complete"
+}

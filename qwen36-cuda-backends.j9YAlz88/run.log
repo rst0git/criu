@@ -1,0 +1,66 @@
+Results directory: /var/tmp/qwen36-cuda-backends.j9YAlz88
+Model revision: 6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
+
+Podman SGLang Checkpoint/Restore Benchmark
+  Kernel : 5.15.0-190-generic
+  CPU    : Intel(R) Xeon(R) Platinum 8468
+  Memory : 201289 MB
+  GPU    : NVIDIA H200
+  Accelerator: gpu
+  Podman : podman version 6.1.1
+  CRIU   : Version: 4.2.1
+GitID: v4.0-726-g33988cc00
+  Plugin : /var/tmp/criu/plugins/cuda
+  Runc conf: /etc/criu/runc.conf
+  Archive: podman --compress=none
+  Config : 1+1 iterations, modes=driver-api / Uncompressed,cuda-checkpoint / Uncompressed
+  Restore: decompress-threads=default (serial)
+  Server : http://127.0.0.1:30000, model=Qwen/Qwen3.6-27B, model-arg=model-path, memory-saver=on, launch-job=on
+  Request: max_tokens=32, temperature=0, warmup_requests=0
+  waiting for sglang-criu-bench-270719-1 health on http://127.0.0.1:30000
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-270719-1 health on http://127.0.0.1:30000
+  waiting for sglang-criu-bench-270719-2 health on http://127.0.0.1:30000
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-270719-2 health on http://127.0.0.1:30000
+  completed warmup
+  waiting for sglang-criu-bench-270719-3 health on http://127.0.0.1:30000
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-270719-3 health on http://127.0.0.1:30000
+  waiting for sglang-criu-bench-270719-4 health on http://127.0.0.1:30000
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-270719-4 health on http://127.0.0.1:30000
+  completed 1/1
+
+========================================================================================
+  PODMAN SGLANG (n=1)
+========================================================================================
+  Inference validation: PASS
+
+  Baseline: driver-api / Uncompressed (first selected configuration)
+  STORAGE (relative to baseline)
+  configuration                  |        archive |          ratio |          saved
+  ---------------------------------------------------------------------------------
+  driver-api / Uncompressed      |       69.31 GB |         1.000x |             0%
+  cuda-checkpoint / Uncompressed |       69.34 GB |         1.000x |            -0%
+
+  LATENCY (median)
+  configuration                  |     checkpoint |        restore |  request after
+  ---------------------------------------------------------------------------------
+  driver-api / Uncompressed      |      325.483 s |      183.450 s |        85.3 ms
+  cuda-checkpoint / Uncompressed |      329.023 s |      262.433 s |        94.3 ms
+Results written to /var/tmp/qwen36-cuda-backends.j9YAlz88/results.json
+
+Completed. Results: /var/tmp/qwen36-cuda-backends.j9YAlz88/results.json
