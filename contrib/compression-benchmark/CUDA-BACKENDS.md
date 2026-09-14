@@ -71,6 +71,45 @@ An optional positional argument selects a new results directory;
 The model uses the Qwen3.5 architecture supported by the pinned SGLang version;
 this FP8 checkpoint still needs an end-to-end validation run on the target host.
 
+### GPT-OSS-120B
+
+Use the separate runner for
+[openai/gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b) on the single
+H200 host after the previous benchmark finishes:
+
+```bash
+cd /var/tmp/criu
+sudo ./contrib/compression-benchmark/run-gpt-oss-120b-cuda-backends.sh
+```
+
+It pins model revision `b5c939de8f754692c1647ca79fbf85e8c1e70f8a` and reuses the
+same SGLang image digest, 70% GPU memory budget, 8192-token context and four-cycle
+schedule. SGLang reads the model's MXFP4 quantization configuration. The runner
+selects Marlin MoE kernels to keep the expert weights packed on H200 and uses
+FA3 attention. Memory saver, CPU weight backup and restore validation remain
+enabled.
+
+GPT-OSS uses Harmony reasoning output. The runner enables its reasoning parser,
+requests low reasoning effort and allows 128 output tokens. The benchmark
+compares the combined reasoning and answer text before and after restore.
+These request settings differ from the Qwen runners and are recorded in the
+JSON results; compare CUDA backends within each model's run.
+
+Results are saved under `/var/tmp/gpt-oss-120b-cuda-backends.*`, including
+`results.json`, `run.log` and `model-revision.txt`. An optional positional
+argument selects a new results directory, and `MODEL_REVISION` overrides the
+default model pin. To download the Hugging Face weights before the run:
+
+```bash
+sudo hf download openai/gpt-oss-120b \
+  --revision b5c939de8f754692c1647ca79fbf85e8c1e70f8a \
+  --exclude 'original/*' --cache-dir /root/.cache/huggingface/hub
+```
+
+The `original/` files are for the model's reference implementation and are not
+needed by SGLang. GPU startup and checkpoint/restore still require validation
+on the target host.
+
 ## Run
 
 Prerequisites: built CRIU and CUDA plugin, Podman/runc checkpoint support,
