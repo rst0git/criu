@@ -23,12 +23,13 @@ SPEC.loader.exec_module(client)
 
 
 class FakeConnection:
-    def __init__(self, events):
+    def __init__(self, events, session_update=None):
         self.events = events
         self.queue = asyncio.Queue()
         self.queue.put_nowait(json.dumps({"type": "session.created"}))
         self.sent = []
         self.closed = False
+        self.session_update = session_update
 
     async def __aenter__(self):
         return self
@@ -40,7 +41,9 @@ class FakeConnection:
         event = json.loads(message)
         self.sent.append(event)
         if event["type"] == "session.update":
-            self.queue.put_nowait(json.dumps({"type": "session.updated"}))
+            session = (event["session"] if self.session_update is None
+                       else self.session_update)
+            self.queue.put_nowait(json.dumps({"type": "session.updated", "session": session}))
         elif event["type"] == "input_audio_buffer.append":
             for response in self.events:
                 self.queue.put_nowait(json.dumps(response))
@@ -76,8 +79,8 @@ class VoiceChatClientTests(unittest.TestCase):
             output.setframerate(24000)
             output.writeframes(struct.pack("<h", 17) * 1920)
 
-    def run_replay(self, events, timeout=1):
-        self.connection = FakeConnection(events)
+    def run_replay(self, events, timeout=1, session_update=None):
+        self.connection = FakeConnection(events, session_update=session_update)
         connector = mock.Mock(return_value=self.connection)
         original_sleep = asyncio.sleep
 
@@ -122,6 +125,32 @@ class VoiceChatClientTests(unittest.TestCase):
         events[2]["transcript"] = "A different sampled reply."
         result = self.run_replay(events)
         self.assertTrue(result["valid"])
+
+    def test_rejects_unsupported_negotiated_audio_before_sending(self):
+        for direction, audio_format in (
+            ("input", {"type": "audio/pcm", "rate": 16000}),
+            ("output", {"type": "audio/pcm", "rate": 22050}),
+            ("output", {"type": "audio/opus", "rate": 24000}),
+        ):
+            with self.subTest(direction=direction, audio_format=audio_format):
+                session = {"audio": {
+                    side: {"format": {"type": "audio/pcm", "rate": 24000}}
+                    for side in ("input", "output")
+                }}
+                session["audio"][direction]["format"] = audio_format
+                with self.assertRaisesRegex(RuntimeError, f"PCM16 {direction} audio"):
+                    self.run_replay(complete_response(), session_update=session)
+                self.assertEqual(len(self.connection.sent), 1)
+                self.assertTrue(self.connection.closed)
+                saved = json.loads(Path(str(self.prefix) + ".json").read_text())
+                self.assertFalse(saved["valid"])
+                self.assertIn(str(audio_format), saved["error"])
+
+    def test_rejects_missing_negotiated_audio_format(self):
+        with self.assertRaisesRegex(RuntimeError, "effective session: {}"):
+            self.run_replay(complete_response(), session_update={})
+        self.assertEqual(len(self.connection.sent), 1)
+        self.assertTrue(self.connection.closed)
 
     def test_rejects_missing_or_silent_outputs_and_incomplete_response(self):
         cases = [

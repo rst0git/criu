@@ -10,10 +10,12 @@
 #include <getopt.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #ifdef LOG_PREFIX
 #undef LOG_PREFIX
@@ -24,6 +26,7 @@
 #define CUDA_PLUGIN_BACKEND_OPTION    CUDA_PLUGIN_NAME ".backend"
 #define CUDA_PLUGIN_DEVICE_MAP_OPTION CUDA_PLUGIN_NAME ".device-map"
 #define CUDA_PLUGIN_TIMEOUT_OPTION    CUDA_PLUGIN_NAME ".timeout"
+#define CUDA_PLUGIN_TIMINGS_OPTION    CUDA_PLUGIN_NAME ".timings"
 
 unsigned int cuda_plugin_timeout;
 
@@ -31,6 +34,7 @@ static const struct cuda_plugin_backend *active_backend;
 static char *device_map_option;
 static struct cuda_device_map restore_device_map;
 static bool cuda_tasks_handled;
+static bool cuda_timings;
 
 enum cuda_backend_selection {
 	CUDA_BACKEND_AUTO,
@@ -44,7 +48,48 @@ enum {
 	CUDA_PLUGIN_OPTION_BACKEND = 1000,
 	CUDA_PLUGIN_OPTION_DEVICE_MAP,
 	CUDA_PLUGIN_OPTION_TIMEOUT,
+	CUDA_PLUGIN_OPTION_TIMINGS,
 };
+
+static uint64_t cuda_timing_start(void)
+{
+	struct timespec now;
+	uint64_t started = 0;
+	int saved_errno = errno;
+
+	if (!cuda_timings)
+		return 0;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &now))
+		pr_perror("Unable to read CUDA plugin timing clock");
+	else
+		started = (uint64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
+	errno = saved_errno;
+	return started;
+}
+
+static int cuda_timing_finish(const struct cuda_plugin_backend *backend, const char *phase,
+			      int pid, int ret, uint64_t started)
+{
+	const char *name = "none";
+	uint64_t finished;
+	int saved_errno = errno;
+
+	if (!started)
+		return ret;
+
+	finished = cuda_timing_start();
+	if (finished) {
+		if (backend == &cuda_driver_backend)
+			name = "driver-api";
+		else if (backend == &cuda_cli_backend)
+			name = "cuda-checkpoint";
+		pr_info("timing backend=%s phase=%s pid=%d ret=%d elapsed_us=%llu\n",
+			name, phase, pid, ret, (unsigned long long)(finished - started));
+	}
+	errno = saved_errno;
+	return ret;
+}
 
 static bool cuda_plugin_option_matches(const char *arg, const char *name,
 				       const char *optarg_val, int *err)
@@ -87,11 +132,13 @@ static int parse_cuda_plugin_options(int stage)
 		{ CUDA_PLUGIN_BACKEND_OPTION, optional_argument, NULL, CUDA_PLUGIN_OPTION_BACKEND },
 		{ CUDA_PLUGIN_DEVICE_MAP_OPTION, optional_argument, NULL, CUDA_PLUGIN_OPTION_DEVICE_MAP },
 		{ CUDA_PLUGIN_TIMEOUT_OPTION, optional_argument, NULL, CUDA_PLUGIN_OPTION_TIMEOUT },
+		{ CUDA_PLUGIN_TIMINGS_OPTION, optional_argument, NULL, CUDA_PLUGIN_OPTION_TIMINGS },
 		{},
 	};
 	const char *backend_value = NULL;
 	const char *device_map_value = NULL;
 	const char *timeout_value = NULL;
+	const char *timings_value = NULL;
 	char *saved_optarg;
 	char **argv = NULL;
 	int saved_optopt;
@@ -103,6 +150,7 @@ static int parse_cuda_plugin_options(int stage)
 
 	backend_selection = CUDA_BACKEND_AUTO;
 	cuda_plugin_timeout = 300;
+	cuda_timings = false;
 	ret = criu_plugin_get_options(&argc, &argv);
 	if (ret) {
 		pr_err("Unable to read plugin options: %d\n", ret);
@@ -133,6 +181,10 @@ static int parse_cuda_plugin_options(int stage)
 			if (cuda_plugin_option_matches(argv[optind - 1], CUDA_PLUGIN_TIMEOUT_OPTION, optarg, &ret))
 				timeout_value = optarg;
 			break;
+		case CUDA_PLUGIN_OPTION_TIMINGS:
+			if (cuda_plugin_option_matches(argv[optind - 1], CUDA_PLUGIN_TIMINGS_OPTION, optarg, &ret))
+				timings_value = optarg;
+			break;
 		case '?':
 			/* Every plugin receives the same namespaced option list. */
 			break;
@@ -154,6 +206,16 @@ static int parse_cuda_plugin_options(int stage)
 		ret = parse_cuda_backend_option(backend_value);
 		if (ret)
 			goto out;
+	}
+
+	if (timings_value) {
+		if (!strcmp(timings_value, "true")) {
+			cuda_timings = true;
+		} else if (strcmp(timings_value, "false")) {
+			pr_err("Invalid cuda_plugin.timings value '%s' (expected true or false)\n", timings_value);
+			ret = -EINVAL;
+			goto out;
+		}
 	}
 
 	if (timeout_value) {
@@ -267,56 +329,60 @@ int cuda_plugin_add_inventory(void)
 
 static int cuda_plugin_pause_devices(int pid)
 {
-	if (!active_backend)
-		return -ENOTSUP;
+	uint64_t started = cuda_timing_start();
+	int ret;
 
-	return active_backend->pause_devices(pid);
+	ret = active_backend ? active_backend->pause_devices(pid) : -ENOTSUP;
+	return cuda_timing_finish(active_backend, "pause_devices", pid, ret, started);
 }
 CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__PAUSE_DEVICES, cuda_plugin_pause_devices)
 
 static int cuda_plugin_checkpoint_devices(int pid)
 {
-	if (!active_backend)
-		return -ENOTSUP;
+	uint64_t started = cuda_timing_start();
+	int ret;
 
-	return active_backend->checkpoint_devices(pid);
+	ret = active_backend ? active_backend->checkpoint_devices(pid) : -ENOTSUP;
+	return cuda_timing_finish(active_backend, "checkpoint_devices", pid, ret, started);
 }
 CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__CHECKPOINT_DEVICES, cuda_plugin_checkpoint_devices);
 
 static int cuda_plugin_resume_devices_late(int pid)
 {
-	if (!active_backend)
-		return -ENOTSUP;
+	uint64_t started = cuda_timing_start();
+	int ret;
 
-	return active_backend->resume_devices_late(pid, &restore_device_map);
+	ret = active_backend ? active_backend->resume_devices_late(pid, &restore_device_map) : -ENOTSUP;
+	return cuda_timing_finish(active_backend, "resume_devices_late", pid, ret, started);
 }
 CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__RESUME_DEVICES_LATE, cuda_plugin_resume_devices_late)
 
 static int cuda_plugin_dump_devices_late(int id)
 {
-	int ret;
-
-	(void)id;
+	uint64_t started = cuda_timing_start();
+	int ret = -ENOTSUP;
 
 	if (!active_backend || !cuda_tasks_handled)
-		return -ENOTSUP;
+		goto out;
 
 	ret = cuda_gpu_inventory_dump();
 	if (ret == -ENOTSUP) {
 		pr_err("Unable to save required CUDA GPU inventory\n");
-		return -EIO;
+		ret = -EIO;
 	}
 
-	return ret;
+out:
+	return cuda_timing_finish(active_backend, "dump_devices_late", id, ret, started);
 }
 CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__DUMP_DEVICES_LATE, cuda_plugin_dump_devices_late)
 
 static int cuda_plugin_restore_init(void)
 {
-	int ret;
+	uint64_t started = cuda_timing_start();
+	int ret = -ENOTSUP;
 
 	if (!active_backend)
-		return -ENOTSUP;
+		goto done;
 
 	ret = cuda_gpu_inventory_restore_init();
 	if (ret)
@@ -326,16 +392,19 @@ static int cuda_plugin_restore_init(void)
 out:
 	if (ret == -ENOTSUP) {
 		pr_err("Unable to prepare required CUDA GPU mapping state\n");
-		return -EIO;
+		ret = -EIO;
 	}
 
-	return ret;
+done:
+	return cuda_timing_finish(active_backend, "restore_init", 0, ret, started);
 }
 CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__RESTORE_INIT, cuda_plugin_restore_init)
 
 static int cuda_plugin_init(int stage)
 {
+	const struct cuda_plugin_backend *timing_backend = NULL;
 	bool restore_required = false;
+	uint64_t started = 0;
 	int ret;
 
 	active_backend = NULL;
@@ -346,10 +415,11 @@ static int cuda_plugin_init(int stage)
 	ret = parse_cuda_plugin_options(stage);
 	if (ret)
 		goto error;
+	started = cuda_timing_start();
 
 	/* CUDA checkpointing is not compatible with pre-dump. */
 	if (stage == CR_PLUGIN_STAGE__PRE_DUMP)
-		return 0;
+		goto out;
 
 	/* Do not touch libcuda or execute cuda-checkpoint for a CPU-only restore. */
 	if (stage == CR_PLUGIN_STAGE__RESTORE) {
@@ -360,7 +430,7 @@ static int cuda_plugin_init(int stage)
 			goto error;
 		}
 		if (!restore_required)
-			return 0;
+			goto out;
 	}
 
 	if (!fault_injected(FI_PLUGIN_CUDA_FORCE_ENABLE) && !is_cuda_device_available()) {
@@ -370,15 +440,18 @@ static int cuda_plugin_init(int stage)
 			goto error;
 		}
 		pr_info("No GPU device found; CUDA plugin is disabled\n");
-		return 0;
+		goto out;
 	}
 
 	ret = select_cuda_backend();
-	if (ret == -ENOTSUP && backend_selection == CUDA_BACKEND_AUTO && !device_map_option)
-		return 0;
+	if (ret == -ENOTSUP && backend_selection == CUDA_BACKEND_AUTO && !device_map_option) {
+		ret = 0;
+		goto out;
+	}
 	if (ret)
 		goto error;
 
+	timing_backend = active_backend;
 	ret = active_backend->init(stage);
 	if (ret) {
 		pr_err("Unable to initialize %s backend: %d\n", active_backend->name, ret);
@@ -399,25 +472,29 @@ static int cuda_plugin_init(int stage)
 	pr_info("selected %s backend for stage %d\n", active_backend->name, stage);
 	set_compel_interrupt_only_mode();
 
-	return 0;
+out:
+	return cuda_timing_finish(timing_backend, "init", 0, ret, started);
 
 error:
 	free(device_map_option);
 	device_map_option = NULL;
-	return ret;
+	goto out;
 }
 
 static int cuda_plugin_dump_finish(int ret)
 {
-	if (!active_backend)
-		return -ENOTSUP;
+	uint64_t started = cuda_timing_start();
 
-	return active_backend->dump_finish(ret);
+	ret = active_backend ? active_backend->dump_finish(ret) : -ENOTSUP;
+	return cuda_timing_finish(active_backend, "dump_finish", 0, ret, started);
 }
 CR_PLUGIN_REGISTER_HOOK(CR_PLUGIN_HOOK__DUMP_FINISH, cuda_plugin_dump_finish)
 
 static void cuda_plugin_fini(int stage, int ret)
 {
+	const struct cuda_plugin_backend *backend = active_backend;
+	uint64_t started = cuda_timing_start();
+
 	if (active_backend) {
 		pr_info("finished %s backend for stage %d with error %d\n",
 			active_backend->name, stage, ret);
@@ -430,6 +507,7 @@ static void cuda_plugin_fini(int stage, int ret)
 	free(device_map_option);
 	device_map_option = NULL;
 	cuda_tasks_handled = false;
+	cuda_timing_finish(backend, "fini", 0, ret, started);
 }
 
 CR_PLUGIN_REGISTER(CUDA_PLUGIN_NAME, cuda_plugin_init, cuda_plugin_fini)

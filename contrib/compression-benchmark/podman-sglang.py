@@ -2,8 +2,9 @@
 """
 Podman SGLang Checkpoint/Restore Benchmark
 
-Starts an SGLang container with Podman, validates inference, checkpoints it with
-Podman, removes it, restores it with Podman, and validates inference again.
+Starts an SGLang container with Podman, validates inference, checkpoints and
+restores it, and validates inference again. Local checkpoint storage reuses the
+stopped container; archive storage exports and imports a replacement container.
 
 GPU runs enable SGLang's memory saver with CPU weight backup by default. Before
 checkpoint the driver pauses generation and releases SGLang-managed GPU
@@ -15,9 +16,9 @@ on r610 and later drivers. Memory release does not replace that identity.
 Pass --disable-memory-saver only for diagnostic comparisons.
 
 This benchmarks Podman's container checkpoint/restore path while varying CRIU
-memory-page compression through /etc/criu/runc.conf. Podman's own checkpoint
-archive compression is kept at "none" by default so the reported archive size
-reflects CRIU image size rather than tar-level gzip/zstd compression.
+memory-page compression through /etc/criu/runc.conf. Podman's checkpoint archive
+compression defaults to "none". Archive sizes include Podman metadata and
+filesystem changes as well as CRIU images.
 
 Example:
   sudo HF_TOKEN=... python3 contrib/compression-benchmark/podman-sglang.py \\

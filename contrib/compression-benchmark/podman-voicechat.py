@@ -12,16 +12,14 @@ import os
 from pathlib import Path
 import re
 import shutil
-from statistics import median
 import sys
-import wave
 
 _BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BENCHMARK_DIR not in sys.path:
     sys.path.insert(0, _BENCHMARK_DIR)
 
 import podman_common as common  # noqa: E402
-from voicechat_client import replay_audio  # noqa: E402
+from voicechat_client import read_audio, replay_audio  # noqa: E402
 
 
 MODEL = "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B"
@@ -63,8 +61,6 @@ class VoiceChatAdapter:
     def add_request_arguments(parser):
         parser.add_argument("--audio", required=True,
                             help="Fixed 24 kHz mono PCM16 WAV; 20 seconds of silence are appended")
-        parser.add_argument("--artifacts-dir", required=True,
-                            help="New directory for persistent speech artifacts")
 
     @staticmethod
     def add_server_arguments(parser):
@@ -115,16 +111,14 @@ class VoiceChatAdapter:
         if not os.path.isdir(os.path.join(args.model_repo, "nemotron-voicechat")):
             raise RuntimeError("--model-repo must contain the converted nemotron-voicechat repository")
         args.audio = os.path.abspath(args.audio)
-        with wave.open(args.audio, "rb") as source:
-            if (source.getframerate(), source.getnchannels(), source.getsampwidth()) != (24000, 1, 2):
-                raise RuntimeError("--audio must be a 24 kHz mono PCM16 WAV")
-            if source.getnframes() == 0:
-                raise RuntimeError("--audio contains no samples")
-            if source.getnframes() / 24000 + 20 >= args.request_timeout:
-                raise RuntimeError("--request-timeout must exceed the recording duration plus 20 seconds")
+        audio = read_audio(args.audio)
+        if len(audio) / (24000 * 2) + 20 >= args.request_timeout:
+            raise RuntimeError("--request-timeout must exceed the recording duration plus 20 seconds")
         args.audio_sha256 = file_sha256(args.audio)
         args.artifacts_dir = os.path.abspath(args.artifacts_dir)
-        os.mkdir(args.artifacts_dir)
+        saved_audio = os.path.join(args.artifacts_dir, "input.wav")
+        shutil.copy2(args.audio, saved_audio)
+        args.audio = saved_audio
         # Retain a digest of the actual converted inputs, not just the HF name.
         print("  Hashing converted VoiceChat model files (outside timed trials)", flush=True)
         args.model_files = {}
@@ -170,36 +164,48 @@ class VoiceChatBenchmark(common.ServingBenchmark):
         archive = os.path.join(workdir, name + ".tar")
         if args.archive_compression != "none":
             archive += ".gz" if args.archive_compression == "gzip" else ".zst"
-        artifacts = Path(args.artifacts_dir) / f"trial-{trial_id}"
-        artifacts.mkdir()
+        artifacts = common.prepare_trial(self, workdir, args, trial_id)
 
         def replay(label, started_ns):
             print(f"  VoiceChat audio replay: {label}", flush=True)
             return replay_audio(args.base_url, args.audio, args.request_timeout,
                                 started_ns, artifacts / label)
 
-        cold = self.start_container(name, args)
+        with common.trial_phase(self, "start speech server"):
+            cold = self.start_container(name, args)
         before = replay("before", cold["started_ns"])
         cold_first_audio_packet_us = before["operation_to_first_audio_packet_us"]
         for index in range(args.warmup_requests):
             before = replay(f"warmup-{index + 1}", cold["started_ns"])
         # replay_audio waits for session.end and disconnects before returning.
-        checkpoint_us, checkpoint_stats = self.checkpoint_container(name, archive, cfg, args)
-        compression = common.verify_archive_compression(archive, cfg)
-        common.remove_container(name)
-        self.state.started_containers.discard(name)
-        restored = self.restore_container(name, archive, args)
-        after = replay("after", restored["started_ns"])
+        storage_path = common.checkpoint_storage_path(name, workdir, args)
+        common.observe_host(self, "before-checkpoint", storage_path, args)
+        with common.trial_phase(self, "checkpoint speech server"):
+            checkpoint_us, checkpoint_stats = self.checkpoint_container(name, archive, cfg, args)
+        checkpoint = common.inspect_checkpoint(self, name, archive, cfg, args)
+        if checkpoint["checkpoint_storage"] == "archive":
+            common.remove_container(name)
+            self.state.started_containers.discard(name)
+        common.observe_host(self, "before-restore", storage_path, args)
+        with common.trial_phase(self, "condition restore cache"):
+            cache_policy = common.condition_restore_cache(self, name, archive, args)
+        with common.trial_phase(self, "restore and validate speech"):
+            restored = self.restore_container(name, archive, args)
+            after = replay("after", restored["started_ns"])
+        common.save_container_artifacts(self, name, "restore")
+        common.observe_host(self, "after-restore", storage_path, args)
         if before["user_transcript"].strip() != after["user_transcript"].strip():
             raise RuntimeError(f"Input audio transcription changed after restore; see {artifacts}")
+        measurements = common.measurement_results(self, checkpoint_stats, restored["stats"], args, cfg)
+        common.retain_checkpoint(self, name, archive, args)
         if keep_running:
             self.state.started_containers.discard(name)
         else:
             common.remove_container(name)
             self.state.started_containers.discard(name)
         return {
-            "archive_size": os.path.getsize(archive),
-            "inventory_compress_mode": compression,
+            **checkpoint,
+            **measurements,
             "checkpoint_wall_us": checkpoint_us,
             "restore_wall_us": restored["command_us"],
             "server_start_to_health_us": cold["to_health_us"],
@@ -215,8 +221,9 @@ class VoiceChatBenchmark(common.ServingBenchmark):
             "before": before,
             "after": after,
             "valid": True,
-            "cache_policy": "uncontrolled",
+            "cache_policy": cache_policy,
             "gpu_state": "live",
+            "checkpoint_boundary": "between completed audio sessions",
             "framework": self.adapter.key,
             "artifacts": str(artifacts),
             "container_name": name if keep_running else None,
@@ -224,10 +231,6 @@ class VoiceChatBenchmark(common.ServingBenchmark):
 
     def report(self, results_by_cfg, order):
         super().report(results_by_cfg, order)
-        print("\n  Restore to first audio packet (median, includes health and audio replay):")
-        for label in order:
-            timing = median(r["restore_to_first_audio_packet_us"] for r in results_by_cfg[label])
-            print(f"  {label}: {common.format_duration(timing)}")
         print("  Validation checks speech output and input transcription; generated audio may differ.")
 
 

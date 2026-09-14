@@ -77,15 +77,19 @@ class VoiceChatDriverTests(unittest.TestCase):
         self.assertEqual(check.call_args_list, [mock.call(8000), mock.call(8001), mock.call(8002)])
         start.assert_called_once()
 
-    def run_trial(self, after_transcript="Say hello.", replay_error=None):
+    def run_trial(self, after_transcript="Say hello.", replay_error=None, storage="archive"):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         artifacts = root / "speech"
         artifacts.mkdir()
+        images = root / "images"
+        images.mkdir()
+        (images / "inventory.img").write_bytes(b"images")
         args = SimpleNamespace(container_name="voicechat", archive_compression="none",
                                artifacts_dir=str(artifacts), base_url="http://localhost:9000",
-                               audio="input.wav", request_timeout=180, warmup_requests=0)
+                               audio="input.wav", request_timeout=180, warmup_requests=0,
+                               checkpoint_storage=storage, print_stats=True)
         benchmark = driver.VoiceChatBenchmark(driver.VoiceChatAdapter(), "test")
         order = []
 
@@ -97,12 +101,13 @@ class VoiceChatDriverTests(unittest.TestCase):
         def checkpoint(_name, archive, _cfg, _args):
             order.append("checkpoint")
             Path(archive).write_bytes(b"archive")
-            return 3, "checkpoint stats"
+            return 3, '{"container_statistics":[{"runtime_checkpoint_duration":2,"criu_statistics":{}}]}'
 
         def restore(name, _archive, _args):
             order.append("restore")
             benchmark.state.started_containers.add(name)
-            return {"started_ns": 200, "command_us": 4, "to_health_us": 5, "stats": "restore stats"}
+            return {"started_ns": 200, "command_us": 4, "to_health_us": 5,
+                    "stats": '{"container_statistics":[{"runtime_restore_duration":3,"criu_statistics":{}}]}'}
 
         def replay(_url, _audio, _timeout, _started_ns, prefix):
             order.append(prefix.name)
@@ -117,6 +122,10 @@ class VoiceChatDriverTests(unittest.TestCase):
                    mock.patch.object(benchmark, "restore_container", side_effect=restore),
                    mock.patch.object(driver, "replay_audio", side_effect=replay),
                    mock.patch.object(driver.common, "verify_archive_compression", return_value="none"),
+                   mock.patch.object(driver.common, "checkpoint_directory", return_value=images),
+                   mock.patch.object(driver.common, "checkpoint_storage_path", return_value=root),
+                   mock.patch.object(driver.common, "save_container_artifacts"),
+                   mock.patch.object(driver.common, "observe_host"),
                    mock.patch.object(driver.common, "remove_container", side_effect=lambda _name: order.append("remove"))]
         with contextlib.ExitStack() as stack:
             for patch in patches:
@@ -135,10 +144,17 @@ class VoiceChatDriverTests(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(result["gpu_state"], "live")
         self.assertEqual(result["cache_policy"], "uncontrolled")
-        self.assertEqual(result["checkpoint_stats"], "checkpoint stats")
-        self.assertEqual(result["restore_stats"], "restore stats")
+        self.assertEqual(result["checkpoint_runtime_us"], 2)
+        self.assertEqual(result["restore_runtime_us"], 3)
         self.assertIn("restore_to_first_audio_packet_us", result)
         self.assertNotIn("restore_to_first_token_us", result)
+
+    def test_local_roundtrip_restores_original_container(self):
+        result, order = self.run_trial(storage="local")
+        self.assertEqual(order, ["start", "before", "checkpoint", "restore", "after", "remove"])
+        self.assertEqual(result["checkpoint_storage"], "local")
+        self.assertIsNone(result["archive_size"])
+        self.assertEqual(result["checkpoint_size_scope"], "criu_images")
 
     def test_changed_input_transcription_fails_trial(self):
         with self.assertRaisesRegex(RuntimeError, "transcription changed"):

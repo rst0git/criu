@@ -1,5 +1,5 @@
 unit:
-	python3 ./test_config.py
+	python3 -m unittest discover -s . -p 'test_*.py'
 
 run: unit
 	./run.sh

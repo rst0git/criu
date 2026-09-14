@@ -1,6 +1,7 @@
 CFLAGS	+= $(USERCFLAGS) $(ARCHCFLAGS) -fPIC
 
 BIN := cuda-checkpoint libcuda.so.1 unsupported/libcuda.so.1 cuda-device-map-test cuda-backend-guard-test
+BIN += cuda-plugin-timings-test
 SRC := cuda-checkpoint.c libcuda.c
 DEP	:= $(SRC:%.c=%.d)
 OBJ	:= $(SRC:%.c=%.o)
@@ -53,7 +54,13 @@ cuda-backend-guard-test: backend-guard.c $(CUDA_PLUGIN_DIR)/cuda_plugin_driver.c
 		../../criu/clone-noasan.c \
 		-Wl,--wrap,ptrace -ldl -o $@
 
+cuda-plugin-timings-test: plugin-timings.c $(CUDA_PLUGIN_DIR)/cuda_plugin.c $(CUDA_PLUGIN_DIR)/cuda_plugin.h
+	$(E) " LINK     " $@
+	$(Q)$(CC) $(CFLAGS) $(CUDA_TEST_CPPFLAGS) -I../../compel/include/uapi \
+		plugin-timings.c $(CUDA_PLUGIN_DIR)/cuda_plugin.c -Wl,--wrap,clock_gettime -o $@
+
 test: all
+	./cuda-plugin-timings-test
 	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}" ./cuda-device-map-test
 	PATH="$(CURDIR):$$PATH" LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}" ./cuda-backend-guard-test
 .PHONY: test

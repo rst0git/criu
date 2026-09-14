@@ -6,11 +6,15 @@ usage() {
     cat <<'HELP'
 Usage: sudo ./contrib/compression-benchmark/run-gpt-oss-120b-cuda-backends.sh [RESULTS_DIR]
 
-Runs one warmup and one measured checkpoint/restore per CUDA backend
-(four cycles total), saving JSON results, console output and the model revision.
+Runs one excluded warmup and ITERATIONS measured cycles per CUDA backend
+(default 1: four cycles total), saving JSON results, console output and the model revision.
 RESULTS_DIR must not already exist; by default a directory is created in /var/tmp.
+Uses local checkpoint directories without archive export/import.
+Serving runs offline: download the pinned model into the HF cache first.
 
 Optional environment:
+  ITERATIONS     Positive measured cycles per backend (default: 1, smoke test).
+                 Use 4 or more to examine variability and backend differences.
   MODEL_REVISION  Full model commit hash to use instead of the pinned default:
                  b5c939de8f754692c1647ca79fbf85e8c1e70f8a.
 
@@ -30,6 +34,11 @@ if [[ ${1:-} == --help || ${1:-} == -h ]]; then
 fi
 if (( $# > 1 )); then
     usage >&2
+    exit 2
+fi
+iterations=${ITERATIONS-1}
+if [[ ! $iterations =~ ^[1-9][0-9]*$ ]]; then
+    echo 'ITERATIONS must be a positive integer.' >&2
     exit 2
 fi
 if (( EUID != 0 )); then
@@ -85,6 +94,7 @@ python3 "$script_dir/podman-sglang.py" \
     --criu-libdir "$repo_dir/plugins/cuda" \
     --cuda-backends driver-api cuda-checkpoint \
     --modes uncompressed \
+    --checkpoint-storage local \
     --archive-compression none \
     --mem-fraction-static 0.7 \
     --tensor-parallel-size 1 \
@@ -97,8 +107,9 @@ python3 "$script_dir/podman-sglang.py" \
     --enable-thinking \
     --chat-extra-json '{"reasoning_effort":"low"}' \
     --max-tokens 128 \
+    --offline \
     --warmup-requests 0 \
-    --iterations 1 \
+    --iterations "$iterations" \
     --wait-seconds 3600 \
     --print-stats \
     --json "$results_dir/results.json"

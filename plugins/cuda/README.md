@@ -55,6 +55,41 @@ inventory validation reports the missing required plugin.
 Images created before plugin inventory was introduced retain CRIU's legacy
 compatibility behavior and initialize every available plugin during restore.
 
+## Phase timings
+
+For performance investigations, enable timing records in the CRIU log:
+
+```
+criu dump ... -v3 --plugin-option=cuda_plugin.timings=true
+criu restore ... -v3 --plugin-option=cuda_plugin.timings=true
+```
+
+The option accepts `true` or `false` and defaults to `false`. Each completed
+common plugin hook emits one INFO-level record, including errors and hooks that
+return `-ENOTSUP`:
+
+```
+cuda_plugin: timing backend=driver-api phase=checkpoint_devices pid=123 ret=0 elapsed_us=456
+```
+
+The phases are `init`, `pause_devices`, `checkpoint_devices`,
+`resume_devices_late`, `dump_devices_late`, `restore_init`, `dump_finish`, and
+`fini`. Timings use `CLOCK_MONOTONIC`. `init` starts after option parsing and
+includes backend selection, probing, and initialization. `dump_devices_late`
+includes GPU inventory capture; `restore_init` includes inventory loading and
+device mapping. `dump_finish` includes dump-side rollback when needed, and
+`fini` includes backend and inventory cleanup. These phases include helper or
+CLI work and ptrace coordination; they do not measure isolated CUDA API calls.
+They occur within the surrounding CRIU/runtime operation and must not be added
+to its duration.
+
+`backend` is `driver-api`, `cuda-checkpoint`, or `none` when no backend was
+selected. `pid` is the hook's target PID, or zero for hooks without a PID.
+`ret` is the hook return value, except for the void `fini` hook, where it is
+the operation status supplied by CRIU. A hook that does not return cannot emit
+a completion record. Clock-read failures are logged without changing the
+operation's result.
+
 ## CUDA Driver API backend
 The direct backend loads `libcuda.so.1` dynamically and uses these symbols:
 

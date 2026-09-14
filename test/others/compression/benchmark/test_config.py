@@ -245,6 +245,42 @@ class PodmanConfigTests(unittest.TestCase):
     def test_result_write_failure_does_not_mark_trial_failed(self):
         self.check_result_write_failure(trial_fails=False)
 
+    def test_main_interruption_preserves_terminal_status_and_failed_sample(self):
+        import json
+        import tempfile
+
+        for interruption in (KeyboardInterrupt(), SystemExit(130)):
+            with self.subTest(interruption=type(interruption).__name__), tempfile.TemporaryDirectory() as directory:
+                benchmark = self.common.ServingBenchmark(self.sglang.SglangAdapter(), "test")
+                destination = Path(directory) / "results.json"
+                real_mkdtemp = tempfile.mkdtemp
+                with (
+                    mock.patch.object(self.common.os, "getuid", return_value=0),
+                    mock.patch.object(self.common.signal, "signal"),
+                    mock.patch("atexit.register"),
+                    mock.patch.object(self.common, "collect_system_info", return_value={}),
+                    mock.patch.object(self.common, "container_diagnostics", return_value="failure logs"),
+                    mock.patch.object(self.common, "save_container_artifacts"),
+                    mock.patch.object(self.common, "run_cmd", return_value=SimpleNamespace(stdout="")),
+                    mock.patch.object(benchmark.adapter, "prepare_args"),
+                    mock.patch.object(benchmark, "run_trial", side_effect=interruption),
+                    mock.patch.object(tempfile, "mkdtemp", side_effect=lambda **kw:
+                                      real_mkdtemp(dir=directory, **kw)),
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                    self.assertRaises(type(interruption)),
+                ):
+                    benchmark.main(["--image", "local:latest", "--iterations", "1",
+                                    "--modes", "uncompressed", "--json", str(destination)])
+                document = json.loads(destination.read_text())
+                self.assertEqual(document["status"], "interrupted")
+                self.assertEqual(document["results"]["Uncompressed"], [])
+                self.assertEqual(len(document["failures"]), 1)
+                failure = document["failures"][0]
+                self.assertTrue(failure["warmup"])
+                self.assertTrue(Path(failure["checkpoint_workdir"]).is_dir())
+                self.assertNotIn(failure["checkpoint_workdir"], benchmark.state.tempdirs)
+
     def check_result_write_failure(self, trial_fails):
         import tempfile
 
@@ -1165,6 +1201,7 @@ log-file /tmp/criu.log"""
             b'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n'
             b'data: {"choices":[{"delta":{"content":"he"}}]}\n\n'
             b'data: {"choices":[{"delta":{"content":"llo"}}]}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
             b'data: [DONE]\n\n'
         )
         started_ns = self.common.time.monotonic_ns()
@@ -1176,6 +1213,11 @@ log-file /tmp/criu.log"""
                 10, started_ns,
             )
         self.assertEqual(timing["content"], "hello")
+        self.assertEqual(timing["output_content"], "hello")
+        self.assertEqual(timing["reasoning_content"], "")
+        self.assertEqual(timing["finish_reason"], "stop")
+        self.assertTrue(timing["completed"])
+        self.assertIsNone(timing["usage"])
         self.assertLessEqual(
             timing["operation_to_first_event_us"],
             timing["operation_to_first_token_us"],
@@ -1191,6 +1233,49 @@ log-file /tmp/criu.log"""
         self.assertLessEqual(
             timing["request_to_first_token_us"], timing["request_us"]
         )
+
+    def test_streaming_chat_preserves_reasoning_and_usage(self):
+        response = io.BytesIO(
+            b'data: {"choices":[{"delta":{"reasoning_content":"Think."}}]}\n\n'
+            b'data: {"choices":[{"delta":{"content":"Answer."},"finish_reason":"length"}]}\n\n'
+            b'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":4}}\n\n'
+            b'data: [DONE]\n\n'
+        )
+        with mock.patch.object(self.common.urllib.request, "urlopen", return_value=response):
+            timing = self.common.chat_stream_once(
+                "http://127.0.0.1:30000", "model", "prompt", 4, 0, 42,
+                10, self.common.time.monotonic_ns(),
+            )
+        self.assertEqual(timing["content"], "Think.Answer.")
+        self.assertEqual(timing["output_content"], "Answer.")
+        self.assertEqual(timing["reasoning_content"], "Think.")
+        self.assertEqual(timing["finish_reason"], "length")
+        self.assertEqual(timing["usage"], {"prompt_tokens": 3, "completion_tokens": 4})
+
+    def test_streaming_chat_rejects_incomplete_or_failed_responses(self):
+        content = b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'
+        finish = b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        done = b'data: [DONE]\n\n'
+        cases = [
+            (content, "incomplete"),
+            (content + finish, "incomplete"),
+            (content + done, "incomplete"),
+            (content + b'data: {"error":{"message":"generation failed"}}\n\n' + done,
+             "generation failed"),
+            (content + b'data: {"choices":[{"delta":{},"finish_reason":"abort"}]}\n\n' + done,
+             "finish_reason='abort'"),
+            (b'data: {"choices":[{"delta":{"reasoning_content":"Thinking"}}]}\n\n' + finish + done,
+             "no final output text"),
+        ]
+        for stream, message in cases:
+            with self.subTest(message=message, stream=stream):
+                with (mock.patch.object(self.common.urllib.request, "urlopen",
+                                        return_value=io.BytesIO(stream)),
+                      self.assertRaisesRegex(RuntimeError, message)):
+                    self.common.chat_stream_once(
+                        "http://127.0.0.1:30000", "model", "prompt", 4, 0, 42,
+                        10, self.common.time.monotonic_ns(),
+                    )
 
     @staticmethod
     def trial_args():
@@ -1223,8 +1308,9 @@ log-file /tmp/criu.log"""
                 "content": responses.pop(0),
             }
 
-        def checkpoint(*_args):
+        def checkpoint(_name, archive, *_args):
             events.append("checkpoint")
+            Path(archive).write_bytes(b"x" * 1234)
             return 20, "checkpoint stats"
 
         def verify(*_args):
@@ -1259,9 +1345,9 @@ log-file /tmp/criu.log"""
                               side_effect=checkpoint),
             mock.patch.object(module.common, "verify_archive_compression",
                               side_effect=verify),
+            mock.patch.object(module.common, "save_container_artifacts"),
             mock.patch.object(module.common, "run_cmd", side_effect=remove),
             mock.patch.object(benchmark, "restore_container", side_effect=restore),
-            mock.patch.object(module.common.os.path, "getsize", return_value=1234),
         ):
             result = module.run_trial(
                 {"mode": "uncompressed", "block_size": 0},
@@ -1294,7 +1380,7 @@ log-file /tmp/criu.log"""
                 self.assertEqual(result["restore_to_first_token_us"], 40)
                 self.assertEqual(result["cold_start_request_ttft_us"], 5)
                 self.assertEqual(result["restore_request_ttft_us"], 5)
-                self.assertEqual(result["cache_policy"], "warm")
+                self.assertEqual(result["cache_policy"], "uncontrolled")
 
     def test_mocked_framework_restore_rejects_changed_response(self):
         import tempfile

@@ -35,7 +35,8 @@ def _websocket_url(base_url):
                        "/v1/realtime", "", ""))
 
 
-def _read_audio(path):
+def read_audio(path):
+    """Read and validate the fixed PCM16 input before starting a benchmark."""
     with wave.open(str(path), "rb") as source:
         if (source.getnchannels() != 1 or source.getsampwidth() != 2
                 or source.getframerate() != SAMPLE_RATE
@@ -63,6 +64,22 @@ def _event(message):
     return event
 
 
+def _validate_audio_formats(event):
+    # session.updated echoes the effective formats. Sending PCM or saving a
+    # PCM WAV without checking them can silently corrupt the speech workload.
+    for direction in ("input", "output"):
+        try:
+            audio_format = event["session"]["audio"][direction]["format"]
+        except (KeyError, TypeError):
+            audio_format = None
+        if (not isinstance(audio_format, dict)
+                or audio_format.get("type") != "audio/pcm"
+                or audio_format.get("rate") != SAMPLE_RATE):
+            raise RuntimeError(
+                f"VoiceChat did not negotiate 24 kHz PCM16 {direction} audio; "
+                f"effective session: {event.get('session')!r}")
+
+
 async def _send_event(connection, event_type, **fields):
     await connection.send(json.dumps({
         "type": event_type, "event_id": str(uuid.uuid4()), **fields,
@@ -83,6 +100,8 @@ async def _replay(url, audio, state):
             state["events"].append(event)
             if event["type"] != expected:
                 raise RuntimeError(f"Expected VoiceChat {expected}, got {event['type']}")
+            if expected == "session.updated":
+                _validate_audio_formats(event)
             if expected == "session.created":
                 await _send_event(connection, "session.update", session={
                     "audio": {
@@ -203,7 +222,7 @@ def replay_audio(base_url, wav_path, timeout, operation_started_ns, output_prefi
     recorded for inspection, not used as a determinism assertion.
     """
     url = _websocket_url(base_url)
-    audio = _read_audio(wav_path)
+    audio = read_audio(wav_path)
     if timeout <= 0:
         raise ValueError("VoiceChat timeout must be positive")
     started_ns = time.monotonic_ns()

@@ -11,9 +11,14 @@ INPUT_WAV must be a fixed 24 kHz mono PCM16 speech recording. The client adds
 20 seconds of silence so the full-duplex model has time to respond.
 See CUDA-BACKENDS.md for pinned model preparation instructions.
 
-Runs one warmup and one measured checkpoint/restore per CUDA backend
-(four cycles total), saving results.json, run.log and speech artifacts.
+Runs one excluded warmup and ITERATIONS measured cycles per CUDA backend
+(default 1: four cycles total), saving results.json, run.log and speech artifacts.
 RESULTS_DIR must not already exist; by default a directory is created in /var/tmp.
+Uses local checkpoint directories without archive export/import.
+
+Optional environment:
+  ITERATIONS     Positive measured cycles per backend (default: 1, smoke test).
+                 Use 4 or more to examine variability and backend differences.
 
 Requires the built CRIU and CUDA plugin, Podman/runc, NVIDIA CDI, an r610 or
 newer driver, cuda-checkpoint with --launch-job, and Python websockets>=14.
@@ -32,6 +37,11 @@ if [[ ${1:-} == --help || ${1:-} == -h ]]; then
 fi
 if (( $# < 2 || $# > 3 )); then
     usage >&2
+    exit 2
+fi
+iterations=${ITERATIONS-1}
+if [[ ! $iterations =~ ^[1-9][0-9]*$ ]]; then
+    echo 'ITERATIONS must be a positive integer.' >&2
     exit 2
 fi
 if (( EUID != 0 )); then
@@ -75,9 +85,10 @@ python3 "$script_dir/podman-voicechat.py" \
     --criu-libdir "$repo_dir/plugins/cuda" \
     --cuda-backends driver-api cuda-checkpoint \
     --modes uncompressed \
+    --checkpoint-storage local \
     --archive-compression none \
     --warmup-requests 0 \
-    --iterations 1 \
+    --iterations "$iterations" \
     --wait-seconds 3600 \
     --request-timeout 180 \
     --print-stats \

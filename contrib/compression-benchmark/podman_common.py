@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import json
 import os
+from pathlib import Path
 import platform
 import posixpath
 import shlex
@@ -43,6 +44,8 @@ class RuntimeState:
         self.criu_wrapper_dir = None
         self.cleanup_started = False
         self.received_signal = None
+        self.trial_artifacts = None
+        self.operation_outputs = {}
 
 
 PODMAN = "podman"
@@ -187,8 +190,8 @@ def signal_handler(benchmark, signum, frame):
     if runtime.received_signal is not None:
         return
     runtime.received_signal = signum
-    # Defer cleanup until subprocess.run() has killed and waited for its
-    # active child and Python starts unwinding through atexit handlers.
+    # Defer cleanup until the active command has stopped and Python starts
+    # unwinding through atexit handlers.
     for handled in SIGNALS:
         signal.signal(handled, signal.SIG_IGN)
     raise SystemExit(128 + signum)
@@ -437,6 +440,7 @@ def chat_stream_once(base_url, model, prompt, max_tokens, temperature, seed,
         "max_tokens": max_tokens,
         "seed": seed,
         "stream": True,
+        "stream_options": {"include_usage": True},
     }
     if extra_body:
         payload.update(extra_body)
@@ -454,6 +458,11 @@ def chat_stream_once(base_url, model, prompt, max_tokens, temperature, seed,
     first_event_ns = None
     first_token_ns = None
     chunks = []
+    output_chunks = []
+    reasoning_chunks = []
+    finish_reason = None
+    usage = None
+    completed = False
     with urllib.request.urlopen(request, timeout=timeout) as response:
         response_headers_ns = time.monotonic_ns()
         for raw_line in response:
@@ -465,6 +474,7 @@ def chat_stream_once(base_url, model, prompt, max_tokens, temperature, seed,
                 first_event_ns = now_ns
             event = line[5:].strip()
             if event == "[DONE]":
+                completed = True
                 break
             try:
                 document = json.loads(event)
@@ -473,17 +483,56 @@ def chat_stream_once(base_url, model, prompt, max_tokens, temperature, seed,
                     f"{framework_name} returned malformed streaming JSON: "
                     f"{event[:200]}"
                 ) from error
-            delta = document.get("choices", [{}])[0].get("delta", {})
-            text = delta.get("content") or delta.get("reasoning_content") or ""
-            if text:
-                if first_token_ns is None:
-                    first_token_ns = now_ns
-                chunks.append(text)
+            if not isinstance(document, dict):
+                raise RuntimeError(f"{framework_name} returned a non-object streaming event")
+            if "error" in document:
+                raise RuntimeError(
+                    f"{framework_name} streaming request failed: {document['error']}")
+            if document.get("usage") is not None:
+                usage = document["usage"]
+                if not isinstance(usage, dict):
+                    raise RuntimeError(f"{framework_name} returned invalid token usage")
+            # OpenAI-compatible servers send usage in a final choices=[] event.
+            choices = document.get("choices", [])
+            if not isinstance(choices, list):
+                raise RuntimeError(f"{framework_name} returned invalid streaming choices")
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    raise RuntimeError(f"{framework_name} returned an invalid streaming choice")
+                if choice.get("index", 0) != 0:
+                    continue
+                delta = choice.get("delta") or {}
+                if not isinstance(delta, dict):
+                    raise RuntimeError(f"{framework_name} returned an invalid streaming delta")
+                for field, target in (("reasoning_content", reasoning_chunks),
+                                      ("content", output_chunks)):
+                    text = delta.get(field)
+                    if text is None:
+                        continue
+                    if not isinstance(text, str):
+                        raise RuntimeError(
+                            f"{framework_name} returned non-text {field}")
+                    if text:
+                        if first_token_ns is None:
+                            first_token_ns = now_ns
+                        chunks.append(text)
+                        target.append(text)
+                if choice.get("finish_reason") is not None:
+                    finish_reason = choice["finish_reason"]
+                    if finish_reason not in ("stop", "length"):
+                        raise RuntimeError(
+                            f"{framework_name} streaming request ended with "
+                            f"finish_reason={finish_reason!r}")
     completed_ns = time.monotonic_ns()
     content = "".join(chunks)
-    if first_token_ns is None or not content.strip():
+    output_content = "".join(output_chunks)
+    if not completed or finish_reason is None:
         raise RuntimeError(
-            f"{framework_name} streaming validation returned no output token"
+            f"{framework_name} streaming response was incomplete: "
+            f"received_done={completed}, finish_reason={finish_reason!r}")
+    if first_token_ns is None or not output_content.strip():
+        raise RuntimeError(
+            f"{framework_name} streaming validation returned no final output text"
         )
 
     def elapsed_us(end_ns, start_ns):
@@ -516,6 +565,11 @@ def chat_stream_once(base_url, model, prompt, max_tokens, temperature, seed,
             completed_ns, operation_started_ns
         ),
         "content": content,
+        "output_content": output_content,
+        "reasoning_content": "".join(reasoning_chunks),
+        "finish_reason": finish_reason,
+        "usage": usage,
+        "completed": completed,
     }
 
 
@@ -578,15 +632,263 @@ def redact_run_args(items):
     return out
 
 
-def run_cmd(cmd, env=None, check=True):
+def run_cmd(cmd, env=None, check=True, timeout=None, progress=None):
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        if timeout is None and progress is None:
+            r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        else:
+            started = time.monotonic()
+            with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, env=env, start_new_session=True) as process:
+                try:
+                    while True:
+                        remaining = timeout - (time.monotonic() - started) if timeout is not None else 30
+                        if remaining <= 0:
+                            raise subprocess.TimeoutExpired(cmd, timeout)
+                        try:
+                            stdout, stderr = process.communicate(timeout=min(30, remaining))
+                            break
+                        except subprocess.TimeoutExpired:
+                            if progress:
+                                print(f"  {progress}: {time.monotonic() - started:.0f}s elapsed",
+                                      flush=True)
+                except BaseException as error:
+                    # The runtime/CRIU children inherit these pipes. Killing
+                    # only Podman can leave communicate waiting indefinitely.
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        stdout, stderr = process.communicate(timeout=5)
+                    except subprocess.TimeoutExpired as drain_error:
+                        # A descendant may have changed session. Preserve the
+                        # captured output without waiting for its pipe EOF.
+                        stdout, stderr = drain_error.output, drain_error.stderr
+                        process.stdout.close()
+                        process.stderr.close()
+                    error.output = stdout.decode(errors="replace") if isinstance(stdout, bytes) else stdout or ""
+                    error.stderr = stderr.decode(errors="replace") if isinstance(stderr, bytes) else stderr or ""
+                    raise
+            r = subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
     except OSError as e:
         raise RuntimeError(f"unable to execute {format_cmd(cmd)}: {e}") from e
     if check and r.returncode:
         msg = (r.stderr or r.stdout).strip()
         raise RuntimeError(f"{format_cmd(cmd)} failed: {msg[-6000:]}")
     return r
+
+
+def prepare_trial(benchmark, workdir, args, trial_id):
+    destination = Path(getattr(args, "artifacts_dir", None) or workdir) / f"trial-{trial_id}"
+    destination.mkdir()
+    benchmark.state.trial_artifacts = destination
+    benchmark.state.operation_outputs = {}
+    print(f"  Trial {trial_id} artifacts: {destination}", flush=True)
+    return destination
+
+
+def write_json(path, value):
+    temporary = Path(str(path) + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2) + "\n")
+    temporary.replace(path)
+
+
+@contextlib.contextmanager
+def trial_phase(benchmark, phase):
+    """Persist the last phase even if a process is interrupted or loses stdout."""
+    destination = benchmark.state.trial_artifacts
+    started = time.monotonic_ns()
+    progress = {"phase": phase, "status": "running"}
+    if destination:
+        write_json(destination / "progress.json", progress)
+    print(f"  {phase}", flush=True)
+    try:
+        yield
+    except BaseException as error:
+        progress.update(status="failed", error=str(error) or type(error).__name__)
+        raise
+    else:
+        progress["status"] = "complete"
+    finally:
+        progress["elapsed_us"] = (time.monotonic_ns() - started) // 1000
+        if destination:
+            try:
+                write_json(destination / "progress.json", progress)
+            except OSError:
+                if progress["status"] != "failed":
+                    raise
+                print(f"Unable to save {phase} failure progress", file=sys.stderr)
+
+
+def inspect_container(name):
+    result = run_cmd([PODMAN, "container", "inspect", name])
+    try:
+        entries = json.loads(result.stdout)
+        if not isinstance(entries, list) or len(entries) != 1 or not isinstance(entries[0], dict):
+            raise ValueError("expected one container")
+        return entries[0]
+    except (ValueError, TypeError) as error:
+        raise RuntimeError(f"Unable to inspect benchmark container {name}: {error}") from error
+
+
+def checkpoint_directory(name):
+    info = inspect_container(name)
+    path = info.get("State", {}).get("CheckpointPath")
+    if not path or not Path(path).is_dir():
+        raise RuntimeError(f"Container {name} has no checkpoint directory: {path}")
+    return Path(path)
+
+
+def save_container_artifacts(benchmark, name, phase, required=True):
+    """Copy small diagnostics before Podman cleanup; never copy model memory here."""
+    if benchmark.state.trial_artifacts is None:
+        return
+    destination = benchmark.state.trial_artifacts / phase
+    destination.mkdir(exist_ok=True)
+    result = benchmark.state.operation_outputs.get(phase)
+    if result:
+        (destination / "podman.stdout").write_text(result.stdout)
+        (destination / "podman.stderr").write_text(result.stderr)
+    info = inspect_container(name)
+    state = info.get("State", {})
+    write_json(destination / "container-state.json", {
+        "id": info.get("Id"), "state": {
+            key: state.get(key) for key in
+            ("Status", "Pid", "ExitCode", "Checkpointed", "Restored")
+        },
+    })
+    log_name, stats_name, log_key = (("dump.log", "stats-dump", "CheckpointLog")
+                                     if phase == "checkpoint"
+                                     else ("restore.log", "stats-restore", "RestoreLog"))
+    if state.get(log_key):
+        log_path = Path(state[log_key])
+    elif info.get("OCIConfigPath"):
+        log_path = Path(info["OCIConfigPath"]).parent / log_name
+    else:
+        # Older inspect responses may not expose the operation's log path.
+        log_path = Path(info["StaticDir"]) / log_name
+    for filename, source in ((log_name, log_path), (stats_name, log_path.parent / stats_name)):
+        if source.is_file():
+            shutil.copy2(source, destination / filename)
+        elif required:
+            raise RuntimeError(f"Missing {phase} diagnostic: {source}")
+
+
+def podman_operation(benchmark, name, cmd, phase, args):
+    """Time the command, then preserve its output and CRIU diagnostics."""
+    environment = podman_env(benchmark, args)
+    destination = benchmark.state.trial_artifacts
+    if destination:
+        destination = destination / phase
+        destination.mkdir(exist_ok=True)
+    started = time.monotonic_ns()
+    try:
+        result = run_cmd(cmd, env=environment, check=False,
+                         timeout=getattr(args, "command_timeout", 3600), progress=phase)
+        elapsed_us = (time.monotonic_ns() - started) // 1000
+        benchmark.state.operation_outputs[phase] = result
+        if result.returncode:
+            raise RuntimeError(f"{format_cmd(cmd)} failed: "
+                               f"{(result.stderr or result.stdout).strip()[-6000:]}")
+    except BaseException as error:
+        if hasattr(error, "output"):
+            benchmark.state.operation_outputs[phase] = subprocess.CompletedProcess(
+                cmd, -1, error.output or "", error.stderr or "")
+        try:
+            save_container_artifacts(benchmark, name, phase, required=False)
+        except (OSError, RuntimeError, KeyError, TypeError) as error:
+            print(f"Unable to save {phase} diagnostics: {error}", file=sys.stderr)
+        raise
+    return elapsed_us, result.stdout.strip()
+
+
+def inspect_checkpoint(benchmark, name, archive, cfg, args):
+    storage = getattr(args, "checkpoint_storage", "archive")
+    source = checkpoint_directory(name) if storage == "local" else Path(archive)
+    mode = verify_archive_compression(source, cfg)
+    paths = list(source.rglob("*")) if source.is_dir() else [source]
+    files = [path.stat() for path in paths if path.is_file()]
+    size = sum(item.st_size for item in files)
+    save_container_artifacts(benchmark, name, "checkpoint")
+    return {
+        "checkpoint_storage": storage,
+        "checkpoint_size": size,
+        "checkpoint_size_scope": "criu_images" if storage == "local" else "podman_archive",
+        "checkpoint_disk_bytes": sum(item.st_blocks * 512 for item in files),
+        "archive_size": size if storage == "archive" else None,
+        "inventory_compress_mode": mode,
+    }
+
+
+def retain_checkpoint(benchmark, name, archive, args):
+    if not getattr(args, "keep_checkpoint_files", False):
+        return
+    destination = benchmark.state.trial_artifacts / "checkpoint"
+    if getattr(args, "checkpoint_storage", "archive") == "archive":
+        shutil.move(archive, destination / Path(archive).name)
+    else:
+        source = checkpoint_directory(name)
+        # This optional copy is outside all measured intervals. Preserve sparse
+        # images and use a reflink when the filesystem supports it.
+        run_cmd(["cp", "-a", "--reflink=auto", "--sparse=always",
+                 str(source), str(destination / "images")])
+
+
+def host_state(path, accelerator):
+    """Cheap phase-boundary observations; they are not continuous profiling."""
+    result = {"memory": {}}
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        key, value = line.split(":", 1)
+        if key in ("MemAvailable", "Cached", "Dirty", "Writeback", "SwapFree"):
+            result["memory"][key + "_kib"] = int(value.split()[0])
+    usage = shutil.disk_usage(path)
+    result["storage"] = {"path": str(path), "device": os.stat(path).st_dev,
+                         "free_bytes": usage.free, "total_bytes": usage.total}
+    mount = run_cmd(["findmnt", "--json", "--target", str(path),
+                     "--output", "SOURCE,FSTYPE,TARGET,OPTIONS"], check=False)
+    result["storage"]["mount"] = json.loads(mount.stdout) if mount.returncode == 0 else None
+    if accelerator == "gpu":
+        gpu = run_cmd(["nvidia-smi", "--query-gpu=uuid,memory.used,utilization.gpu",
+                       "--format=csv,noheader,nounits"])
+        result["gpu_columns"] = ["uuid", "memory_used_mib", "utilization_percent"]
+        result["gpu"] = gpu.stdout.strip().splitlines()
+    return result
+
+
+def checkpoint_storage_path(name, workdir, args):
+    if getattr(args, "checkpoint_storage", "archive") == "local":
+        # CRIU images are under Podman's bundle, which can be on a different
+        # filesystem from both StaticDir (transient storage) and workdir.
+        info = inspect_container(name)
+        state = info.get("State", {})
+        if state.get("CheckpointPath"):
+            return Path(state["CheckpointPath"]).parent
+        if info.get("OCIConfigPath"):
+            # Available before the first checkpoint, unlike CheckpointPath.
+            return Path(info["OCIConfigPath"]).parent
+        for key in ("CheckpointLog", "RestoreLog"):
+            if state.get(key):
+                return Path(state[key]).parent
+        return Path(info["StaticDir"])
+    return Path(workdir)
+
+
+def condition_restore_cache(benchmark, name, archive, args):
+    policy = getattr(args, "cache_policy", "uncontrolled")
+    if policy == "cold":
+        # Explicit opt-in: affects the entire host. Never include synchronization
+        # and eviction in the restore timer.
+        run_cmd(["sync"])
+        Path("/proc/sys/vm/drop_caches").write_text("3\n")
+    return policy
+
+
+def observe_host(benchmark, label, path, args):
+    if not getattr(args, "artifacts_dir", None):
+        return
+    write_json(benchmark.state.trial_artifacts / f"host-{label}.json",
+               host_state(path, getattr(args, "accelerator", "cpu")))
 
 
 def remove_container(name, attempts=3, retry_delay=1):
@@ -954,8 +1256,8 @@ def cuda_backend_config_base(base):
         if fields:
             option, _, inline = fields[0].lstrip("-").partition("=")
             value = inline or (fields[1] if len(fields) > 1 else "")
-            if option == "libdir" or (option == "plugin-option" and
-                                      value.startswith("cuda_plugin.backend=")):
+            if option in ("libdir", "verbosity") or (option == "plugin-option" and
+                    value.startswith(("cuda_plugin.backend=", "cuda_plugin.timings="))):
                 continue
         kept.append(line)
     return "\n".join(kept)
@@ -975,7 +1277,9 @@ def set_runc_conf_for_cfg(benchmark, path, cfg, acceleration,
     if cfg.get("cuda_backend"):
         base = cuda_backend_config_base(base)
         lines += [f"libdir {json.dumps(cfg['criu_libdir'])}",
-                  f"plugin-option cuda_plugin.backend={cfg['cuda_backend']}"]
+                  f"plugin-option cuda_plugin.backend={cfg['cuda_backend']}",
+                  f"plugin-option cuda_plugin.timings={'true' if cfg.get('cuda_timings') else 'false'}",
+                  "verbosity 4"]
     if lines:
         block = "\n".join([RUNC_CONF_BEGIN, *lines, RUNC_CONF_END])
         text = f"{base}\n\n{block}\n" if base else f"{block}\n"
@@ -1042,6 +1346,8 @@ def build_container_cmd(benchmark, name, args):
         cmd += benchmark.adapter.cpu_podman_args(args)
     for item in args.env:
         cmd += ["--env", item]
+    if getattr(args, "offline", False):
+        cmd += ["--env", "HF_HUB_OFFLINE=1", "--env", "TRANSFORMERS_OFFLINE=1"]
     for item in args.volume:
         cmd += ["-v", item]
     for item in args.run_arg:
@@ -1096,24 +1402,18 @@ def checkpoint_container(benchmark, name, archive, cfg, args):
     set_runc_conf_for_cfg(benchmark, args.runc_conf, cfg,
                           args.compress_acceleration,
                           args.decompress_threads)
-    cmd = [
-        PODMAN, "container", "checkpoint",
-        "--export", archive,
-        "--compress", args.archive_compression,
-        "--ignore-volumes",
-        "--file-locks",
-        "--tcp-established",
-    ]
+    cmd = [PODMAN, "container", "checkpoint", "--file-locks", "--tcp-established"]
+    if getattr(args, "checkpoint_storage", "archive") == "archive":
+        cmd += ["--export", archive, "--compress", args.archive_compression,
+                "--ignore-volumes"]
     if args.print_stats:
         cmd.append("--print-stats")
-    if args.keep_checkpoint_files:
+    if (args.keep_checkpoint_files or benchmark.state.trial_artifacts
+            or getattr(args, "checkpoint_storage", "archive") == "local"):
         cmd.append("--keep")
     cmd.append(name)
 
-    t0 = time.monotonic()
-    r = run_cmd(cmd, env=podman_env(benchmark, args))
-    checkpoint_us = int((time.monotonic() - t0) * 1e6)
-    return checkpoint_us, r.stdout.strip()
+    return podman_operation(benchmark, name, cmd, "checkpoint", args)
 
 
 def _tar_command(cmd, binary=False):
@@ -1155,7 +1455,10 @@ def inventory_entry_from_archive(archive):
         sys.path.insert(0, os.path.join(REPO_ROOT, "lib"))
     try:
         from pycriu import images as pimg
-        inventory = pimg.loads(inventory_bytes_from_archive(archive))
+        source = Path(archive)
+        payload = ((source / "inventory.img").read_bytes() if source.is_dir()
+                   else inventory_bytes_from_archive(archive))
+        inventory = pimg.loads(payload)
     except Exception as exc:
         raise RuntimeError(
             "unable to decode checkpoint inventory; build the CRIU Python "
@@ -1199,35 +1502,39 @@ def verify_archive_compression(archive, cfg):
 
 
 def restore_container(benchmark, name, archive, args):
-    cmd = [
-        PODMAN, "container", "restore",
-        "--import", archive,
-        "--ignore-volumes",
-        "--file-locks",
-        "--tcp-established",
-    ]
+    cmd = [PODMAN, "container", "restore", "--file-locks", "--tcp-established"]
+    if getattr(args, "checkpoint_storage", "archive") == "archive":
+        cmd += ["--import", archive, "--ignore-volumes"]
+    else:
+        cmd.append(name)
     if args.print_stats:
         cmd.append("--print-stats")
+    if (args.keep_checkpoint_files or benchmark.state.trial_artifacts
+            or getattr(args, "checkpoint_storage", "archive") == "local"):
+        cmd.append("--keep")
 
     started_ns = time.monotonic_ns()
     benchmark.state.started_containers.add(name)
-    r = run_cmd(cmd, env=podman_env(benchmark, args))
-    command_complete_ns = time.monotonic_ns()
-    restore_us = (command_complete_ns - started_ns) // 1000
+    restore_us, stats = podman_operation(benchmark, name, cmd, "restore", args)
     # A memory-released serving process may deliberately report unhealthy
     # until its accelerator allocations and worker loops are resumed. Resume
     # immediately after the runtime restore, before polling application health.
     after_restore = getattr(benchmark.adapter, "after_restore", None)
+    resume_us = 0
     if after_restore is not None:
-        after_restore(args)
+        with trial_phase(benchmark, "resume application"):
+            resume_started_ns = time.monotonic_ns()
+            after_restore(args)
+            resume_us = (time.monotonic_ns() - resume_started_ns) // 1000
     print(f"  waiting for restored {name} health on {args.base_url}", flush=True)
     wait_health(args.base_url, args.health_path, args.wait_seconds, name,
                 benchmark.adapter.display_name)
     return {
         "started_ns": started_ns,
         "command_us": restore_us,
+        "application_resume_us": resume_us,
         "to_health_us": (time.monotonic_ns() - started_ns) // 1000,
-        "stats": r.stdout.strip(),
+        "stats": stats,
     }
 
 
@@ -1238,8 +1545,9 @@ def run_trial(benchmark, cfg, workdir, args, trial_id, keep_running=False):
         archive += ".gz"
     elif args.archive_compression == "zstd":
         archive += ".zst"
-
-    cold_start = benchmark.start_container(name, args)
+    artifacts = prepare_trial(benchmark, workdir, args, trial_id)
+    with trial_phase(benchmark, "start server"):
+        cold_start = benchmark.start_container(name, args)
     request_model = args.served_model_name or args.model
     cold_timing = benchmark.chat_stream_once(
         args.base_url, request_model, args.prompt, args.max_tokens,
@@ -1257,21 +1565,38 @@ def run_trial(benchmark, cfg, workdir, args, trial_id, keep_running=False):
     )
     pre_us = pre_timing["request_us"]
     pre_content = pre_timing["content"]
+    write_json(artifacts / "validation.json", {"cold": cold_timing, "before": pre_timing})
+    storage_path = checkpoint_storage_path(name, workdir, args)
+    observe_host(benchmark, "before-release", storage_path, args)
     before_checkpoint = getattr(benchmark.adapter, "before_checkpoint", None)
+    preparation_us = 0
     if before_checkpoint is not None:
-        before_checkpoint(args)
-    checkpoint_us, checkpoint_stats = benchmark.checkpoint_container(
-        name, archive, cfg, args
-    )
-    inventory_compress_mode = verify_archive_compression(archive, cfg)
-    remove_container(name)
-    benchmark.state.started_containers.discard(name)
-    restore_timing = benchmark.restore_container(name, archive, args)
-    post_timing = benchmark.chat_stream_once(
-        args.base_url, request_model, args.prompt, args.max_tokens,
-        args.temperature, args.seed, args.request_timeout,
-        restore_timing["started_ns"], args.chat_extra_json,
-    )
+        with trial_phase(benchmark, "pause and release application memory"):
+            prepare_started_ns = time.monotonic_ns()
+            before_checkpoint(args)
+            preparation_us = (time.monotonic_ns() - prepare_started_ns) // 1000
+    observe_host(benchmark, "after-release", storage_path, args)
+    with trial_phase(benchmark, "checkpoint"):
+        checkpoint_us, checkpoint_stats = benchmark.checkpoint_container(name, archive, cfg, args)
+    checkpoint = inspect_checkpoint(benchmark, name, archive, cfg, args)
+    if checkpoint["checkpoint_storage"] == "archive":
+        remove_container(name)
+        benchmark.state.started_containers.discard(name)
+    observe_host(benchmark, "before-restore", storage_path, args)
+    with trial_phase(benchmark, "condition restore cache"):
+        cache_policy = condition_restore_cache(benchmark, name, archive, args)
+    with trial_phase(benchmark, "restore and validate inference"):
+        restore_timing = benchmark.restore_container(name, archive, args)
+        post_timing = benchmark.chat_stream_once(
+            args.base_url, request_model, args.prompt, args.max_tokens,
+            args.temperature, args.seed, args.request_timeout,
+            restore_timing["started_ns"], args.chat_extra_json,
+        )
+    write_json(artifacts / "validation.json", {
+        "cold": cold_timing, "before": pre_timing, "after": post_timing,
+    })
+    save_container_artifacts(benchmark, name, "restore")
+    observe_host(benchmark, "after-restore", storage_path, args)
     post_us = post_timing["request_us"]
     post_content = post_timing["content"]
     pre_digest = hashlib.sha256(pre_content.encode()).hexdigest()
@@ -1285,6 +1610,8 @@ def run_trial(benchmark, cfg, workdir, args, trial_id, keep_running=False):
             "deterministic validation response changed after restore: "
             f"before_sha256={pre_digest}, after_sha256={post_digest}"
         )
+    measurements = measurement_results(benchmark, checkpoint_stats, restore_timing["stats"], args, cfg)
+    retain_checkpoint(benchmark, name, archive, args)
     if keep_running:
         # Exempt only the explicitly retained final container from atexit
         # cleanup. Earlier trials must release the shared host-network port.
@@ -1294,8 +1621,10 @@ def run_trial(benchmark, cfg, workdir, args, trial_id, keep_running=False):
         benchmark.state.started_containers.discard(name)
 
     return {
-        "archive_size": os.path.getsize(archive),
-        "inventory_compress_mode": inventory_compress_mode,
+        **checkpoint,
+        **measurements,
+        "application_prepare_us": preparation_us,
+        "application_resume_us": restore_timing.get("application_resume_us", 0),
         "checkpoint_wall_us": checkpoint_us,
         "restore_wall_us": restore_timing["command_us"],
         "server_start_to_health_us": cold_start["to_health_us"],
@@ -1323,7 +1652,10 @@ def run_trial(benchmark, cfg, workdir, args, trial_id, keep_running=False):
         "checkpoint_stats": checkpoint_stats,
         "restore_stats": restore_timing["stats"],
         "validation_response_sha256": post_digest,
-        "cache_policy": "warm",
+        "cache_policy": cache_policy,
+        "gpu_state": "released" if getattr(args, "memory_saver", False) else "live",
+        "checkpoint_boundary": "between completed requests",
+        "artifacts": str(artifacts),
         "valid": valid,
         "framework": benchmark.adapter.key,
         "container_name": name if keep_running else None,
@@ -1340,60 +1672,209 @@ def json_config(args):
     return result
 
 
+def parse_podman_stats(raw, operation, required=False):
+    """Extract one container's runtime and CRIU stats; durations are microseconds."""
+    if raw is None or raw == "":
+        if required:
+            raise RuntimeError(f"Missing Podman {operation} statistics")
+        return None, None, {}
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        if not isinstance(data, dict):
+            raise ValueError("expected a JSON object")
+        containers = data.get("container_statistics")
+        if not isinstance(containers, list) or len(containers) != 1:
+            raise ValueError("expected exactly one container_statistics entry")
+        container = containers[0]
+        if not isinstance(container, dict):
+            raise ValueError("invalid container_statistics entry")
+        duration = container.get(f"runtime_{operation}_duration")
+        if type(duration) is not int or duration < 0:
+            raise ValueError("runtime duration must be a nonnegative integer")
+        criu = container.get("criu_statistics")
+        if not isinstance(criu, dict):
+            raise ValueError("missing criu_statistics object")
+        if any(key.endswith("_time") and (type(value) is not int or value < 0)
+               for key, value in criu.items()):
+            raise ValueError("CRIU durations must be nonnegative integers")
+    except (ValueError, TypeError) as error:
+        raise RuntimeError(f"Invalid Podman {operation} statistics: {error}") from error
+    return data, duration, criu
+
+
+def parse_cuda_timings(log, operation, backend, required=False):
+    """Keep every dispatched hook, including unsupported tasks and errors."""
+    import re
+
+    backend_names = {"Driver API": "driver-api", "cuda-checkpoint CLI": "cuda-checkpoint"}
+    selected = [backend_names.get(name, name) for name in re.findall(
+        r"cuda_plugin: selected ([^\n]+?) backend for stage \d+", log)]
+    if backend and (not selected or any(value != backend for value in selected)):
+        raise RuntimeError(f"Missing or mismatched {operation} CUDA backend evidence: "
+                           f"expected {backend}, found {selected}")
+    pattern = (r"cuda_plugin: timing backend=(\S+) phase=(\S+) pid=(-?\d+) "
+               r"ret=(-?\d+) elapsed_us=(\d+)(?:\s|$)")
+    records = []
+    for match in re.finditer(pattern, log):
+        name, phase, pid, ret, elapsed = match.groups()
+        if backend and name != backend:
+            raise RuntimeError(f"Unexpected {operation} CUDA timing backend: {name}")
+        records.append({"operation": operation, "backend": name, "phase": phase,
+                        "pid": int(pid), "ret": int(ret), "elapsed_us": int(elapsed)})
+    if len(records) != log.count("cuda_plugin: timing "):
+        raise RuntimeError(f"Malformed {operation} CUDA timing record")
+    if required:
+        expected = {"init", "checkpoint_devices" if operation == "checkpoint"
+                    else "resume_devices_late"}
+        missing = expected - {record["phase"] for record in records}
+        if missing:
+            raise RuntimeError(f"Missing {operation} CUDA timings: {', '.join(sorted(missing))}")
+    return records
+
+
+def measurement_results(benchmark, checkpoint_stats, restore_stats, args, cfg=None):
+    """Normalize timings and retain evidence after the timed operations finish."""
+    result = {"cuda_timings": []}
+    artifacts = benchmark.state.trial_artifacts
+    backend = (cfg or {}).get("cuda_backend")
+    timings_required = bool(backend and getattr(args, "cuda_timings", False))
+    for operation, raw, stats_key, log_name in (
+        ("checkpoint", checkpoint_stats, "criu_dump_stats", "dump.log"),
+        ("restore", restore_stats, "criu_restore_stats", "restore.log"),
+    ):
+        data, duration, criu = (parse_podman_stats(raw, operation, required=True)
+                               if getattr(args, "print_stats", False)
+                               else (None, None, {}))
+        result[f"{operation}_runtime_us"] = duration
+        result[stats_key] = criu
+        if artifacts is not None and data is not None:
+            destination = Path(artifacts) / operation
+            destination.mkdir(exist_ok=True)
+            write_json(destination / "podman-stats.json", data)
+        if backend:
+            if artifacts is None:
+                raise RuntimeError("CUDA backend comparison requires preserved CRIU logs")
+            path = Path(artifacts) / operation / log_name
+            try:
+                log = path.read_text(errors="replace")
+            except OSError as error:
+                raise RuntimeError(f"Unable to read CUDA backend evidence {path}: {error}") from error
+            result["cuda_timings"].extend(parse_cuda_timings(
+                log, operation, backend, required=timings_required))
+    return result
+
+
+def measurement_summary(values, formatter=format_duration):
+    if not values:
+        return "unavailable (n=0)"
+    return (f"{formatter(median(values))} "
+            f"[{formatter(min(values))}, {formatter(max(values))}] (n={len(values)})")
+
+
+def paired_runtime_differences(first, second, key):
+    """Match two configurations by global trial round, not result-list position."""
+    groups = []
+    for trials in (first, second):
+        by_round = {}
+        for trial in trials:
+            number, value = trial.get("trial"), trial.get(key)
+            if (type(number) is not int or number < 1 or type(value) is not int
+                    or value < 0 or not trial.get("valid")):
+                continue
+            round_index = (number - 1) // 2
+            if round_index in by_round:
+                raise RuntimeError(f"Multiple {key} samples in paired trial round {round_index}")
+            by_round[round_index] = value
+        groups.append(by_round)
+    return [groups[1][index] - groups[0][index]
+            for index in sorted(groups[0].keys() & groups[1].keys())]
+
+
+def signed_duration(value):
+    sign = "+" if value > 0 else "-" if value < 0 else ""
+    return sign + format_duration(abs(value))
+
+
 def report(benchmark, results_by_cfg, order):
-    label_width = max(20, max(len(label) for label in order))
-    value_width = 14
-    width = max(88, label_width + value_width * 3 + 12)
-    print()
-    print("=" * width)
-    print(
-        f"  PODMAN {benchmark.adapter.heading} "
-        f"(n={len(next(iter(results_by_cfg.values())))})"
-    )
-    print("=" * width)
+    print(f"\n  PODMAN {benchmark.adapter.heading}")
     ok = all(r["valid"] for trials in results_by_cfg.values() for r in trials)
     print(f"  Inference validation: {'PASS' if ok else 'FAIL'}")
-    print()
-
+    print("  Values: median [min, max], measured samples only.")
+    print("  OCI, CRIU and CUDA timings are nested; do not add them to command wall time.")
     baseline = "Uncompressed" if "Uncompressed" in results_by_cfg else order[0]
-    base = median([r["archive_size"] for r in results_by_cfg[baseline]])
-    baseline_note = (
-        "CRIU page-image compression disabled"
-        if baseline == "Uncompressed"
-        else "first selected configuration"
-    )
-    print(f"  Baseline: {baseline} ({baseline_note})")
-    storage_header = (f"  {'configuration':<{label_width}} | "
-                      f"{'archive':>{value_width}} | "
-                      f"{'ratio':>{value_width}} | "
-                      f"{'saved':>{value_width}}")
-    print("  STORAGE (relative to baseline)")
-    print(storage_header)
-    print("  " + "-" * (len(storage_header) - 2))
-    for label in order:
-        size = median([r["archive_size"] for r in results_by_cfg[label]])
-        ratio = size / base if base else 0
-        print(f"  {label:<{label_width}} | {format_bytes(size):>{value_width}} | "
-              f"{ratio:>{value_width - 1}.3f}x | "
-              f"{(1-ratio):>{value_width}.0%}")
-    print()
-
-    print("  LATENCY (median)")
-    latency_header = (f"  {'configuration':<{label_width}} | "
-                      f"{'checkpoint':>{value_width}} | "
-                      f"{'restore':>{value_width}} | "
-                      f"{'request after':>{value_width}}")
-    print(latency_header)
-    print("  " + "-" * (len(latency_header) - 2))
+    baseline_sizes = [r.get("checkpoint_size", r.get("archive_size"))
+                      for r in results_by_cfg[baseline]]
+    baseline_size = median([size for size in baseline_sizes if size is not None])
+    print(f"  Storage baseline: {baseline}")
     for label in order:
         trials = results_by_cfg[label]
-        values = [
-            format_duration(median([r[key] for r in trials]))
-            for key in ("checkpoint_wall_us", "restore_wall_us",
-                        "post_request_us")
-        ]
-        print(f"  {label:<{label_width}} | " + " | ".join(
-            f"{value:>{value_width}}" for value in values))
+        print(f"\n  {label}: n={len(trials)}")
+        if len(trials) < 4:
+            print("    INCONCLUSIVE: fewer than four measured trials; no backend ranking.")
+        sizes = [r.get("checkpoint_size", r.get("archive_size")) for r in trials]
+        sizes = [size for size in sizes if size is not None]
+        print("    Checkpoint size: " + measurement_summary(
+            sizes, lambda size: f"{size / (1024 ** 3):.2f} GiB"))
+        if sizes and baseline_size:
+            ratio = median(sizes) / baseline_size
+            print(f"    Size relative to baseline: {ratio:.3f}x ({1 - ratio:.0%} saved)")
+        metrics = (
+            ("Application checkpoint preparation", "application_prepare_us"),
+            ("Checkpoint command wall", "checkpoint_wall_us"),
+            ("Checkpoint OCI runtime", "checkpoint_runtime_us"),
+            ("Restore command wall", "restore_wall_us"),
+            ("Restore OCI runtime", "restore_runtime_us"),
+            ("Application resume", "application_resume_us"),
+            ("Restore to health", "restore_to_health_us"),
+            ("Restore to first token", "restore_to_first_token_us"),
+            ("Restore to first audio packet", "restore_to_first_audio_packet_us"),
+            ("Restore to response complete", "restore_to_response_complete_us"),
+            ("Restore to session complete", "restore_to_session_complete_us"),
+            ("Request after restore", "post_request_us"),
+        )
+        for title, key in metrics:
+            values = [r[key] for r in trials if r.get(key) is not None]
+            if values or key in ("checkpoint_runtime_us", "restore_runtime_us"):
+                print(f"    {title}: {measurement_summary(values)}")
+        for title, stats_key, key in (
+            ("CRIU freezing", "criu_dump_stats", "freezing_time"),
+            ("CRIU frozen", "criu_dump_stats", "frozen_time"),
+            ("CRIU restore", "criu_restore_stats", "restore_time"),
+        ):
+            values = [r[stats_key][key] for r in trials if key in r.get(stats_key, {})]
+            if values:
+                print(f"    {title}: {measurement_summary(values)}")
+        phases = sorted({(record["operation"], record["phase"])
+                         for r in trials for record in r.get("cuda_timings", [])})
+        for operation, phase in phases:
+            values, handled, unsupported, errors = [], 0, 0, 0
+            for trial in trials:
+                records = [record for record in trial.get("cuda_timings", [])
+                           if (record["operation"], record["phase"]) == (operation, phase)]
+                if records:
+                    values.append(sum(record["elapsed_us"] for record in records))
+                handled += sum(record["ret"] == 0 for record in records)
+                unsupported += sum(record["ret"] == -errno.ENOTSUP for record in records)
+                errors += sum(record["ret"] not in (0, -errno.ENOTSUP) for record in records)
+            print(f"    CUDA {operation}/{phase}: {measurement_summary(values)}; "
+                  f"calls ok={handled}, unsupported={unsupported}, error={errors}")
+    if len(order) == 2:
+        first, second = order
+        print(f"\n  PAIRED OCI DIFFERENCES: {second} minus {first}")
+        print("  Positive means the first configuration was faster; negative means the second.")
+        for operation in ("checkpoint", "restore"):
+            differences = paired_runtime_differences(
+                results_by_cfg[first], results_by_cfg[second], f"{operation}_runtime_us")
+            print(f"    {operation.capitalize()}: "
+                  f"{measurement_summary(differences, signed_duration)}")
+            reasons = []
+            if len(differences) < 4:
+                reasons.append("fewer than four complete pairs")
+            if differences and min(differences) <= 0 <= max(differences):
+                reasons.append("paired difference range includes zero")
+            if reasons:
+                print("      INCONCLUSIVE: " + "; ".join(reasons) + ".")
+        print("  Pairs use trial rounds; these are observed differences, not a significance test.")
 
 
 def run_main(benchmark, argv=None, description=None):
@@ -1436,6 +1917,14 @@ def run_main(benchmark, argv=None, description=None):
     ap.add_argument("--archive-compression", default="none",
                     choices=["none", "gzip", "zstd"],
                     help="Podman checkpoint archive compression")
+    ap.add_argument("--checkpoint-storage", choices=["local", "archive"], default="archive",
+                    help="Restore local container images or export/import an archive")
+    ap.add_argument("--cache-policy", choices=["uncontrolled", "cold"], default="uncontrolled",
+                    help="Cold synchronizes and drops HOST caches before restore; use an idle host")
+    ap.add_argument("--offline", action="store_true",
+                    help="Require prepopulated Hugging Face files; disable runtime Hub downloads")
+    ap.add_argument("--cuda-timings", action=argparse.BooleanOptionalAction, default=True,
+                    help="Record CUDA plugin phase timings for backend comparisons")
     ap.add_argument("--criu-libdir", default=os.environ.get("CRIU_LIBS_DIR"),
                     help="Directory containing CRIU plugin .so files")
     ap.add_argument("--hf-cache", default=os.path.expanduser("~/.cache/huggingface"))
@@ -1462,6 +1951,8 @@ def run_main(benchmark, argv=None, description=None):
                          "measured pre-checkpoint request")
     ap.add_argument("--wait-seconds", type=int, default=900)
     ap.add_argument("--request-timeout", type=int, default=180)
+    ap.add_argument("--command-timeout", type=int, default=3600,
+                    help="Maximum seconds for each Podman checkpoint or restore command")
     ap.add_argument("--env", action="append", default=[],
                     help="Extra container environment entry, e.g. KEY=VALUE")
     ap.add_argument("--volume", action="append", default=[],
@@ -1474,7 +1965,8 @@ def run_main(benchmark, argv=None, description=None):
     ap.add_argument("--print-stats", action="store_true",
                     help="Ask Podman to print checkpoint/restore stats")
     ap.add_argument("--keep-checkpoint-files", action="store_true",
-                    help="Pass --keep to podman checkpoint")
+                    help="Retain large checkpoint images as well as per-trial diagnostics")
+    ap.add_argument("--artifacts-dir", help="New persistent directory (default: JSON stem.artifacts)")
     ap.add_argument("--keep-running", action="store_true",
                     help="Leave only the final measured restored container "
                          "running")
@@ -1484,6 +1976,12 @@ def run_main(benchmark, argv=None, description=None):
 
     if args.iterations <= 0:
         ap.error("--iterations must be greater than zero")
+    if args.command_timeout <= 0 or args.request_timeout <= 0 or args.wait_seconds <= 0:
+        ap.error("command, request and readiness timeouts must be positive")
+    if args.warmup_requests < 0:
+        ap.error("--warmup-requests must be nonnegative")
+    if args.checkpoint_storage == "local" and args.archive_compression != "none":
+        ap.error("--archive-compression requires --checkpoint-storage archive")
     if not 1 <= args.compress_acceleration <= MAX_COMPRESSION_ACCELERATION:
         ap.error("--compress-acceleration must be between 1 and "
                  f"{MAX_COMPRESSION_ACCELERATION}")
@@ -1505,6 +2003,7 @@ def run_main(benchmark, argv=None, description=None):
     if any(run_arg_sets_environment(item) for item in args.run_arg):
         ap.error("pass environment entries through --env, not --run-arg")
     adapter.normalize_args(ap, args)
+    args.cuda_timings = args.cuda_timings and bool(getattr(args, "cuda_backends", None))
     if os.getuid() != 0:
         sys.exit("Error: run as root so Podman/CRIU can checkpoint the container")
     runtime.cleanup_containers = True
@@ -1519,7 +2018,22 @@ def run_main(benchmark, argv=None, description=None):
 
     info = collect_system_info()
     print()
+    if args.json and Path(args.json).exists():
+        raise RuntimeError(f"Results already exist: {args.json}")
+    if args.artifacts_dir or args.json:
+        args.artifacts_dir = str(Path(args.artifacts_dir or Path(args.json).with_suffix(".artifacts")).absolute())
+        Path(args.artifacts_dir).mkdir()
+    else:
+        args.artifacts_dir = tempfile.mkdtemp(prefix=adapter.temp_prefix + "results-")
     adapter.prepare_args(args)
+    info["benchmark"] = {
+        "git_revision": run_cmd(["git", "-C", REPO_ROOT, "rev-parse", "HEAD"]).stdout.strip(),
+        "dirty": bool(run_cmd(["git", "-C", REPO_ROOT, "status", "--porcelain"]).stdout.strip()),
+        "source_sha256": {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in Path(__file__).parent.glob("*.py")
+        },
+    }
     if getattr(args, "cuda_backends", None):
         info["cuda_benchmark"] = cuda_benchmark_identity(args)
     if args.prompt_file:
@@ -1538,7 +2052,9 @@ def run_main(benchmark, argv=None, description=None):
     print(f"  CRIU   : {info.get('criu', '?')}")
     print(f"  Plugin : {args.criu_libdir or 'default CRIU plugin path'}")
     print(f"  Runc conf: {args.runc_conf}")
-    print(f"  Archive: podman --compress={args.archive_compression}")
+    print(f"  Storage: {args.checkpoint_storage}; archive compression={args.archive_compression}")
+    print(f"  Restore cache: {args.cache_policy}; offline={args.offline}")
+    print(f"  Artifacts: {args.artifacts_dir}")
 
     cfgs = []
     for mode in args.modes:
@@ -1548,7 +2064,7 @@ def run_main(benchmark, argv=None, description=None):
         else:
             cfgs.append({"mode": mode, "block_size": 0})
     if getattr(args, "cuda_backends", None):
-        cfgs = [dict(cfg, cuda_backend=backend,
+        cfgs = [dict(cfg, cuda_backend=backend, cuda_timings=args.cuda_timings,
                      criu_libdir=os.path.abspath(args.criu_libdir))
                 for backend in args.cuda_backends for cfg in cfgs]
     labels = [cfg_label(cfg) for cfg in cfgs]
@@ -1580,7 +2096,7 @@ def run_main(benchmark, argv=None, description=None):
             return
         destination = os.path.abspath(args.json)
         with open(destination + ".tmp", "w") as output:
-            json.dump({"system": info, "framework": adapter.key,
+            json.dump({"schema_version": 2, "system": info, "framework": adapter.key,
                        "config": json_config(args), "results": results,
                        "warmups": warmups, "failures": failures,
                        "status": status}, output, indent=2)
@@ -1596,31 +2112,47 @@ def run_main(benchmark, argv=None, description=None):
         configurations = configurations[offset:] + configurations[:offset]
         for config_index, (cfg, label) in enumerate(configurations):
             trial += 1
+            print(f"\n  Trial {trial}/{total * len(cfgs)}: {label} "
+                  f"({'warmup, excluded' if warmup else f'measured {i}/{args.iterations}'})", flush=True)
             workdir = tempfile.mkdtemp(prefix=adapter.temp_prefix)
             runtime.tempdirs.add(workdir)
+            runtime.trial_artifacts = None
             try:
                 retain = (args.keep_running and not warmup and
                           i == total - 1 and
                           config_index == len(configurations) - 1)
                 result = benchmark.run_trial(cfg, workdir, args, trial, retain)
-            except Exception as e:
+            except BaseException as e:
+                failure_artifacts = str(runtime.trial_artifacts or workdir)
                 failures.append({"trial": trial, "warmup": warmup,
-                                "configuration": cfg, "error": str(e),
-                                "artifacts": workdir})
+                                "configuration": cfg, "error": str(e) or type(e).__name__,
+                                "artifacts": failure_artifacts, "checkpoint_workdir": workdir})
                 runtime.tempdirs.discard(workdir)
                 print(f"\n  ERROR: {label}: {e}", file=sys.stderr)
-                print(f"  Artifacts preserved in {workdir}", file=sys.stderr)
-                print(container_diagnostics(
-                    f"{args.container_name}-{os.getpid()}-{trial}"),
-                      file=sys.stderr)
+                print(f"  Artifacts preserved in {failure_artifacts}", file=sys.stderr)
+                name = f"{args.container_name}-{os.getpid()}-{trial}"
+                for phase in ("checkpoint", "restore"):
+                    try:
+                        save_container_artifacts(benchmark, name, phase, required=False)
+                    except (OSError, RuntimeError, KeyError, TypeError) as diagnostic_error:
+                        print(f"Unable to collect {phase} diagnostics: {diagnostic_error}", file=sys.stderr)
                 try:
-                    save_results("failed")
+                    diagnostics = container_diagnostics(name)
+                    print(diagnostics, file=sys.stderr)
+                    if runtime.trial_artifacts:
+                        (runtime.trial_artifacts / "failure.log").write_text(diagnostics)
+                except Exception as diagnostic_error:
+                    print(f"Unable to collect container diagnostics: {diagnostic_error}", file=sys.stderr)
+                try:
+                    save_results("interrupted" if isinstance(e, (SystemExit, KeyboardInterrupt)) else "failed")
                 except OSError as save_error:
                     print(f"Unable to save failed trial: {save_error}",
                           file=sys.stderr)
                 raise
             else:
                 result.update(trial=trial, configuration=cfg)
+                if runtime.trial_artifacts:
+                    write_json(runtime.trial_artifacts / "result.json", dict(result, warmup=warmup))
                 samples = warmups if warmup else results
                 samples[label].append(result)
                 shutil.rmtree(workdir)
