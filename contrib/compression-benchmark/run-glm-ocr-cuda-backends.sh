@@ -89,6 +89,7 @@ image_url = (
 image_sha256 = "2aa586757a8fd722bb1b81b14657d667ff2707cd37c91230aaa5477f9285e504"
 print("Downloading the pinned OCR image", flush=True)
 with urllib.request.urlopen(image_url, timeout=60) as response:
+    # The pinned image is 21025 bytes; reject oversized responses without buffering them.
     image_data = response.read(21026)
 if hashlib.sha256(image_data).hexdigest() != image_sha256:
     raise SystemExit("OCR image SHA256 does not match the pinned fixture")
