@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Compare CRIU CUDA backends with Gemma-4-31B-IT-NVFP4 on a single H200.
+# Compare CRIU CUDA backends with gemma-4-31B-it on a single H200.
 set -euo pipefail
 
 usage() {
     cat <<'HELP'
-Usage: sudo ./contrib/compression-benchmark/run-gemma4-31b-it-nvfp4-cuda-backends.sh [RESULTS_DIR]
+Usage: sudo ./contrib/compression-benchmark/run-gemma4-31b-it-bf16-cuda-backends.sh [RESULTS_DIR]
 
 Runs one warmup and one measured checkpoint/restore per CUDA backend
 (four cycles total), saving JSON results, console output and the model revision.
@@ -12,12 +12,12 @@ RESULTS_DIR must not already exist; by default a directory is created in /var/tm
 
 Optional environment:
   MODEL_REVISION  Full model commit hash to use instead of the pinned default:
-                 4135a98a9b728a548947683219633b25682223ac.
+                 842da3794eaa0b77d5f08bae87a17459d91ff475.
 
 Requires the built CRIU and CUDA plugin in this checkout, Podman/runc,
 NVIDIA CDI, an r610 or newer driver, and cuda-checkpoint with --launch-job
 support in PATH. Backend comparisons create a CUDA checkpoint job by default.
-Uses NVFP4 weights with Marlin W4A16 kernels and Triton attention on H200.
+Uses the original BF16 weights and Triton attention on H200.
 Thinking is disabled and the output limit is 32 tokens.
 Temporarily edits /etc/criu/runc.conf using the benchmark's configuration lock
 and restoration mechanism.
@@ -56,7 +56,7 @@ if (( $# == 1 )); then
     mkdir -- "$1"
     results_dir=$(cd -- "$1" && pwd)
 else
-    results_dir=$(mktemp -d /var/tmp/gemma4-31b-it-nvfp4-cuda-backends.XXXXXXXX)
+    results_dir=$(mktemp -d /var/tmp/gemma4-31b-it-bf16-cuda-backends.XXXXXXXX)
 fi
 # Capture setup failures as well as benchmark output; set -e stops on failure.
 exec > >(tee "$results_dir/run.log") 2>&1
@@ -67,7 +67,7 @@ import os
 import re
 import sys
 
-revision = os.environ.get("MODEL_REVISION", "4135a98a9b728a548947683219633b25682223ac")
+revision = os.environ.get("MODEL_REVISION", "842da3794eaa0b77d5f08bae87a17459d91ff475")
 if not re.fullmatch(r"[0-9a-f]{40}", revision):
     raise SystemExit("MODEL_REVISION must be a full lowercase model commit hash")
 with open(sys.argv[1], "x") as output:
@@ -80,7 +80,7 @@ digest='3ea7c6d74312d964edbcf9b3819425ea42117eb967ef1cfec632a70c926027df'
 
 python3 "$script_dir/podman-sglang.py" \
     --image "${image}@sha256:${digest}" \
-    --model nvidia/Gemma-4-31B-IT-NVFP4 \
+    --model google/gemma-4-31B-it \
     --model-revision "$model_revision" \
     --criu-libdir "$repo_dir/plugins/cuda" \
     --cuda-backends driver-api cuda-checkpoint \
@@ -91,7 +91,7 @@ python3 "$script_dir/podman-sglang.py" \
     --context-length 8192 \
     --max-total-tokens 8192 \
     --sglang-arg=--disable-radix-cache \
-    --sglang-arg=--fp4-gemm-backend=marlin \
+    --sglang-arg=--dtype=bfloat16 \
     --sglang-arg=--attention-backend=triton \
     --warmup-requests 0 \
     --iterations 1 \

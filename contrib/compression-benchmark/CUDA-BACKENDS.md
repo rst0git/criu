@@ -141,29 +141,30 @@ sudo hf download zai-org/GLM-4.7-Flash \
 
 GPU startup and checkpoint/restore still require validation on the target host.
 
-### Additional NVIDIA models
+### Additional H200 models
 
-These separate runners use the same pinned SGLang image, 70% GPU memory budget,
-8192-token context and four-cycle schedule: one excluded warmup and one measured
-checkpoint/restore per backend. Thinking is disabled with a 32-token output
-limit. Memory saver, CPU weight backup and restore validation remain enabled.
+These separate runners use the same pinned SGLang image, 8192-token context
+and four-cycle schedule: one excluded warmup and one measured checkpoint/restore
+per backend. Thinking is disabled with a 32-token output limit. Memory saver,
+CPU weight backup and restore validation remain enabled. The GPU memory budget
+is 70%, except for the memory-constrained Super-120B configuration below.
 
-| Model | Runner in `contrib/compression-benchmark/` | Target GPU |
+| Model | Precision | Runner in `contrib/compression-benchmark/` |
 | --- | --- | --- |
-| [Qwen3.6-35B-A3B-NVFP4](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4) | `run-qwen36-35b-a3b-nvfp4-cuda-backends.sh` | H200 |
-| [Gemma-4-31B-IT-NVFP4](https://huggingface.co/nvidia/Gemma-4-31B-IT-NVFP4) | `run-gemma4-31b-it-nvfp4-cuda-backends.sh` | H200 |
-| [Gemma-4-26B-A4B-NVFP4](https://huggingface.co/nvidia/Gemma-4-26B-A4B-NVFP4) | `run-gemma4-26b-a4b-nvfp4-cuda-backends.sh` | Blackwell B200/B300 |
-| [NVIDIA-Nemotron-3-Nano-4B-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16) | `run-nemotron3-nano-4b-bf16-cuda-backends.sh` | H200 |
-| [NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4) | `run-nemotron35-lightning-30b-a3b-nvfp4-cuda-backends.sh` | H200 |
-| [NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4) | `run-nemotron3-super-120b-a12b-nvfp4-cuda-backends.sh` | H200 |
+| [Qwen3.6-35B-A3B-FP8](https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8) | FP8 | `run-qwen36-35b-a3b-fp8-cuda-backends.sh` |
+| [gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | BF16 | `run-gemma4-31b-it-bf16-cuda-backends.sh` |
+| [gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) | BF16 | `run-gemma4-26b-a4b-bf16-cuda-backends.sh` |
+| [NVIDIA-Nemotron-3-Nano-4B-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16) | BF16 | `run-nemotron3-nano-4b-bf16-cuda-backends.sh` |
+| [NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16) | BF16 | `run-nemotron35-lightning-30b-a3b-bf16-cuda-backends.sh` |
+| [NVIDIA-Nemotron-3-Super-120B-A12B-FP8](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8) | FP8 | `run-nemotron3-super-120b-a12b-fp8-cuda-backends.sh` |
 
 Each runner pins a full model revision; `--help` displays the pin. An optional
 `MODEL_REVISION` environment variable overrides it with another full commit hash.
-For example, run Lightning from the checkout on the benchmark host:
+For example, run Gemma-26B from the updated checkout on the benchmark host:
 
 ```bash
 cd /var/tmp/criu
-sudo ./contrib/compression-benchmark/run-nemotron35-lightning-30b-a3b-nvfp4-cuda-backends.sh
+sudo ./contrib/compression-benchmark/run-gemma4-26b-a4b-bf16-cuda-backends.sh
 ```
 
 Results go into a model-specific directory under `/var/tmp`, containing
@@ -172,22 +173,26 @@ a new results directory. To download weights before starting, use `hf download`
 with the runner's model and pinned `--revision`, and
 `--cache-dir /root/.cache/huggingface/hub` to populate the default benchmark cache.
 
-The Qwen, Lightning and Super checkpoints mix FP8 and NVFP4 weights and use
-`modelopt_mixed`. Their H200 runners select Marlin W4A16 kernels; the dense
-Gemma-31B runner also uses Marlin for NVFP4 linear layers. These paths use NVFP4
-weight storage with 16-bit activations, rather than native Blackwell FP4
-arithmetic. Nano-4B uses native BF16 weights. All three Nemotron runners use FA3
-attention, while the Gemma runners use Triton attention. Super's serialized
-weights occupy about 75 GiB; CPU backup and checkpoint archives also require
-substantial host RAM and disk space. Its runner caps concurrent requests at 8
-to bound the Mamba state pool while retaining the default FP32 state precision.
+Qwen uses native block FP8 kernels on H200. Gemma uses the original BF16 weights
+and Triton attention; the 26B model also selects Triton MoE, which supports its
+GELU experts on H200. Lightning uses BF16 weights and CUTLASS MoE. All three
+Nemotron runners use FA3 attention. Gemma-26B, Gemma-31B and Lightning have weight
+footprints of approximately 48, 58 and 61 GiB, respectively, before runtime
+allocations. Their CPU backups and checkpoint archives will be larger than the
+former quantized runs; compare backend results from the same model and precision.
 
-**Gemma-4-26B-A4B-NVFP4 requires Blackwell with the pinned image.** Its gated GELU
-experts are unsupported by SGLang v0.5.17's H200 Marlin MoE path. That runner
-checks for SM100/SM103 at GPU index 0 before starting and selects the
-FlashInfer CUTLASS MoE backend. These launch settings have been checked against
-the pinned source; GPU startup and checkpoint/restore still require validation
-on the target host.
+**Super-120B FP8 requires a separate single-H200 smoke test.** Its weight files
+occupy about 120 GiB, which exceeds the former 70% GPU memory budget. Its runner
+uses 95%, caps concurrent requests and CUDA graph batch size at 1, and selects
+native ModelOpt FP8 with CUTLASS MoE. This leaves limited runtime headroom on
+H200. NVIDIA's [model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8)
+lists two H100-80GB GPUs as the minimum and explicitly documents single-GPU
+B200/B300 deployment; single-H200 loading and restore are unverified. CPU weight
+backup also needs substantial host RAM. A failed load or restore does not
+produce a completed comparison.
+
+All launch settings have been checked against the pinned source. GPU startup
+and checkpoint/restore still require validation on the target host.
 
 ## Run
 

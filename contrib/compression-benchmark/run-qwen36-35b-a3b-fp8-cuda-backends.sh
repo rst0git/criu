@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Compare CRIU CUDA backends with NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 on a single H200.
+# Compare CRIU CUDA backends with Qwen3.6-35B-A3B-FP8 on a single H200.
 set -euo pipefail
 
 usage() {
     cat <<'HELP'
-Usage: sudo ./contrib/compression-benchmark/run-nemotron3-super-120b-a12b-nvfp4-cuda-backends.sh [RESULTS_DIR]
+Usage: sudo ./contrib/compression-benchmark/run-qwen36-35b-a3b-fp8-cuda-backends.sh [RESULTS_DIR]
 
 Runs one warmup and one measured checkpoint/restore per CUDA backend
 (four cycles total), saving JSON results, console output and the model revision.
@@ -12,14 +12,12 @@ RESULTS_DIR must not already exist; by default a directory is created in /var/tm
 
 Optional environment:
   MODEL_REVISION  Full model commit hash to use instead of the pinned default:
-                 ff433f5493e25d631c9f12b5d55c674229923d02.
+                 95a723d08a9490559dae23d0cff1d9466213d989.
 
 Requires the built CRIU and CUDA plugin in this checkout, Podman/runc,
 NVIDIA CDI, an r610 or newer driver, and cuda-checkpoint with --launch-job
 support in PATH. Backend comparisons create a CUDA checkpoint job by default.
-Uses mixed FP8/NVFP4 weights with Marlin W4A16 kernels and FA3 attention on H200.
-The pinned weights occupy about 75 GiB; leave adequate host RAM and disk space.
-Limits concurrent requests to 8 to bound the Mamba state pool.
+Uses native FP8 weights and FA3 attention on H200.
 Thinking is disabled and the output limit is 32 tokens.
 Temporarily edits /etc/criu/runc.conf using the benchmark's configuration lock
 and restoration mechanism.
@@ -58,7 +56,7 @@ if (( $# == 1 )); then
     mkdir -- "$1"
     results_dir=$(cd -- "$1" && pwd)
 else
-    results_dir=$(mktemp -d /var/tmp/nemotron3-super-120b-a12b-nvfp4-cuda-backends.XXXXXXXX)
+    results_dir=$(mktemp -d /var/tmp/qwen36-35b-a3b-fp8-cuda-backends.XXXXXXXX)
 fi
 # Capture setup failures as well as benchmark output; set -e stops on failure.
 exec > >(tee "$results_dir/run.log") 2>&1
@@ -69,7 +67,7 @@ import os
 import re
 import sys
 
-revision = os.environ.get("MODEL_REVISION", "ff433f5493e25d631c9f12b5d55c674229923d02")
+revision = os.environ.get("MODEL_REVISION", "95a723d08a9490559dae23d0cff1d9466213d989")
 if not re.fullmatch(r"[0-9a-f]{40}", revision):
     raise SystemExit("MODEL_REVISION must be a full lowercase model commit hash")
 with open(sys.argv[1], "x") as output:
@@ -82,7 +80,7 @@ digest='3ea7c6d74312d964edbcf9b3819425ea42117eb967ef1cfec632a70c926027df'
 
 python3 "$script_dir/podman-sglang.py" \
     --image "${image}@sha256:${digest}" \
-    --model nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
+    --model Qwen/Qwen3.6-35B-A3B-FP8 \
     --model-revision "$model_revision" \
     --criu-libdir "$repo_dir/plugins/cuda" \
     --cuda-backends driver-api cuda-checkpoint \
@@ -93,11 +91,7 @@ python3 "$script_dir/podman-sglang.py" \
     --context-length 8192 \
     --max-total-tokens 8192 \
     --sglang-arg=--disable-radix-cache \
-    --sglang-arg=--quantization=modelopt_mixed \
-    --sglang-arg=--moe-runner-backend=marlin \
-    --sglang-arg=--fp4-gemm-backend=marlin \
     --sglang-arg=--attention-backend=fa3 \
-    --sglang-arg=--max-running-requests=8 \
     --warmup-requests 0 \
     --iterations 1 \
     --wait-seconds 3600 \
