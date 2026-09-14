@@ -1130,6 +1130,34 @@ log-file /tmp/criu.log"""
         self.assertNotIn("--enable-memory-saver", command)
         self.assertNotIn("--enable-weights-cpu-backup", command)
 
+    def test_offline_container_environment_is_explicit_and_overrides_user_env(self):
+        args = SimpleNamespace(
+            accelerator="gpu", security_opt="label=disable", shm_size="4g",
+            hf_cache="/tmp/hf-cache", env=[], volume=[], run_arg=[], ulimit=[],
+            gpu_device="nvidia.com/gpu=all", cuda_visible_devices="0",
+        )
+        benchmark = self.common.ServingBenchmark(
+            SimpleNamespace(server_argv=lambda _args: ["test-image"]), "test")
+
+        def environment():
+            command = benchmark.build_container_cmd("offline-test", args)
+            return [command[index + 1] for index, value in enumerate(command)
+                    if value == "--env"]
+
+        for offline in (None, False, True):
+            with self.subTest(offline=offline):
+                if offline is not None:
+                    args.offline = offline
+                entries = environment()
+                self.assertEqual("HF_HUB_OFFLINE=1" in entries, offline is True)
+                self.assertEqual("TRANSFORMERS_OFFLINE=1" in entries, offline is True)
+        args.env = ["HF_HUB_OFFLINE=0", "TRANSFORMERS_OFFLINE=0"]
+        entries = environment()
+        self.assertGreater(entries.index("HF_HUB_OFFLINE=1"),
+                           entries.index("HF_HUB_OFFLINE=0"))
+        self.assertGreater(entries.index("TRANSFORMERS_OFFLINE=1"),
+                           entries.index("TRANSFORMERS_OFFLINE=0"))
+
     def test_sglang_cuda_checkpoint_launch_job_wraps_server(self):
         args = SimpleNamespace(
             accelerator="gpu", image="sglang-image", model="tiny-model",
