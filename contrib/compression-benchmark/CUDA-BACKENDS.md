@@ -15,6 +15,33 @@ Memory saver releases managed GPU allocations before checkpoint, matching the
 snapshot lifecycle; these results do not describe copying the full live VRAM
 footprint. Use the same storage and GPU assignment for all trials.
 
+## Minimal Qwen3.6-27B run
+
+For the single-H200 evaluation, run the checked-in script from the checkout:
+
+```bash
+sudo ./contrib/compression-benchmark/run-qwen36-cuda-backends.sh
+```
+
+It uses CRIU and the CUDA plugin from its own checkout, the pinned SGLang image,
+Qwen3.6-27B, a 70% GPU memory budget and an 8192-token context. It runs one
+excluded warmup and one measured cycle per backend (four cycles total), with
+no extra warmup inference requests. This provides an initial comparison, not
+an estimate of run-to-run variability. Validation remains enabled.
+
+The script prints its new results directory under `/var/tmp`, containing
+`results.json`, `run.log` and `model-revision.txt`. An optional positional
+argument selects a new results directory. To repeat with the same model commit:
+
+```bash
+sudo env MODEL_REVISION="$(cat /path/to/previous/model-revision.txt)" \
+  ./contrib/compression-benchmark/run-qwen36-cuda-backends.sh
+```
+
+Otherwise the script resolves the current model commit once before starting
+and saves it. Use `--help` for prerequisites. The script is intended to be run
+by the user on the benchmark host; it does not connect over SSH itself.
+
 ## Run
 
 Prerequisites: built CRIU and CUDA plugin, Podman/runc checkpoint support,
