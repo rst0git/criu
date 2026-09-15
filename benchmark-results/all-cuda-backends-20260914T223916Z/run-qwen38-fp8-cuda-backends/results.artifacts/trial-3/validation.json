@@ -1,0 +1,71 @@
+{
+  "cold": {
+    "request_us": 67608,
+    "request_to_headers_us": 48568,
+    "request_to_first_event_us": 48590,
+    "request_to_first_token_us": 48621,
+    "operation_to_request_us": 278624219,
+    "operation_to_headers_us": 278672787,
+    "operation_to_first_event_us": 278672809,
+    "operation_to_first_token_us": 278672840,
+    "operation_to_response_complete_us": 278691827,
+    "content": "Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 19,
+      "total_tokens": 22,
+      "completion_tokens": 3,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 0
+    },
+    "completed": true
+  },
+  "before": {
+    "request_us": 70523,
+    "request_to_headers_us": 51236,
+    "request_to_first_event_us": 51248,
+    "request_to_first_token_us": 51268,
+    "operation_to_request_us": 278691887,
+    "operation_to_headers_us": 278743124,
+    "operation_to_first_event_us": 278743135,
+    "operation_to_first_token_us": 278743156,
+    "operation_to_response_complete_us": 278762411,
+    "content": "Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 19,
+      "total_tokens": 22,
+      "completion_tokens": 3,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 0
+    },
+    "completed": true
+  },
+  "after": {
+    "request_us": 68049,
+    "request_to_headers_us": 49378,
+    "request_to_first_event_us": 49400,
+    "request_to_first_token_us": 49431,
+    "operation_to_request_us": 14540562,
+    "operation_to_headers_us": 14589941,
+    "operation_to_first_event_us": 14589962,
+    "operation_to_first_token_us": 14589994,
+    "operation_to_response_complete_us": 14608612,
+    "content": "Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 19,
+      "total_tokens": 22,
+      "completion_tokens": 3,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 0
+    },
+    "completed": true
+  }
+}

@@ -1,0 +1,16 @@
+{
+    "podman_restore_duration": 12907231,
+    "container_statistics": [
+        {
+            "Id": "bb8efd973b89fa1b8466a7d73acf53d79454b9d9b579cfb3715774ce3cb46ae5",
+            "runtime_restore_duration": 12847875,
+            "criu_statistics": {
+                "pages_compared": 1386575,
+                "pages_skipped_cow": 1376854,
+                "forking_time": 82210,
+                "restore_time": 7729915,
+                "pages_restored": 3333213
+            }
+        }
+    ]
+}

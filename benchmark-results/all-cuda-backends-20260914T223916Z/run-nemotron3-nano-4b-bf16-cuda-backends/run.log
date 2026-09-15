@@ -1,0 +1,160 @@
+Results directory: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron3-nano-4b-bf16-cuda-backends
+Model revision: dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f
+
+Podman SGLang Checkpoint/Restore Benchmark
+  Kernel : 5.15.0-190-generic
+  CPU    : Intel(R) Xeon(R) Platinum 8468
+  Memory : 201289 MB
+  GPU    : NVIDIA H200
+  Accelerator: gpu
+  Podman : podman version 6.1.1
+  CRIU   : Version: 4.2.1
+GitID: v4.0-739-g66695dfca
+  Plugin : /var/tmp/criu/plugins/cuda
+  Runc conf: /etc/criu/runc.conf
+  Storage: local; archive compression=none
+  Restore cache: uncontrolled; offline=True
+  Artifacts: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron3-nano-4b-bf16-cuda-backends/results.artifacts
+  Config : 1+1 iterations, modes=driver-api / Uncompressed,cuda-checkpoint / Uncompressed
+  Restore: decompress-threads=default (serial)
+  Server : http://127.0.0.1:30000, model=nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16, model-arg=model-path, memory-saver=on, launch-job=on
+  Request: max_tokens=32, temperature=0, warmup_requests=0
+
+  Trial 1/4: driver-api / Uncompressed (warmup, excluded)
+  Trial 1 artifacts: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron3-nano-4b-bf16-cuda-backends/results.artifacts/trial-1
+  start server
+  waiting for sglang-criu-bench-379332-1 health on http://127.0.0.1:30000
+  pause and release application memory
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  checkpoint
+  checkpoint: 30s elapsed
+  condition restore cache
+  restore and validate inference
+  resume application
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-379332-1 health on http://127.0.0.1:30000
+
+  Trial 2/4: cuda-checkpoint / Uncompressed (warmup, excluded)
+  Trial 2 artifacts: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron3-nano-4b-bf16-cuda-backends/results.artifacts/trial-2
+  start server
+  waiting for sglang-criu-bench-379332-2 health on http://127.0.0.1:30000
+  pause and release application memory
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  checkpoint
+  checkpoint: 30s elapsed
+  condition restore cache
+  restore and validate inference
+  resume application
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-379332-2 health on http://127.0.0.1:30000
+  completed warmup
+
+  Trial 3/4: cuda-checkpoint / Uncompressed (measured 1/1)
+  Trial 3 artifacts: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron3-nano-4b-bf16-cuda-backends/results.artifacts/trial-3
+  start server
+  waiting for sglang-criu-bench-379332-3 health on http://127.0.0.1:30000
+  pause and release application memory
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  checkpoint
+  checkpoint: 30s elapsed
+  condition restore cache
+  restore and validate inference
+  resume application
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-379332-3 health on http://127.0.0.1:30000
+
+  Trial 4/4: driver-api / Uncompressed (measured 1/1)
+  Trial 4 artifacts: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron3-nano-4b-bf16-cuda-backends/results.artifacts/trial-4
+  start server
+  waiting for sglang-criu-bench-379332-4 health on http://127.0.0.1:30000
+  pause and release application memory
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  checkpoint
+  checkpoint: 30s elapsed
+  condition restore cache
+  restore and validate inference
+  resume application
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-379332-4 health on http://127.0.0.1:30000
+  completed 1/1
+
+  PODMAN SGLANG
+  Inference validation: PASS
+  Values: median [min, max], measured samples only.
+  OCI, CRIU and CUDA timings are nested; do not add them to command wall time.
+  Storage baseline: driver-api / Uncompressed
+
+  driver-api / Uncompressed: n=1
+    INCONCLUSIVE: fewer than four measured trials; no backend ranking.
+    Checkpoint size: 12.64 GiB [12.64 GiB, 12.64 GiB] (n=1)
+    Size relative to baseline: 1.000x (0% saved)
+    Application checkpoint preparation: 2.516 s [2.516 s, 2.516 s] (n=1)
+    Checkpoint command wall: 37.169 s [37.169 s, 37.169 s] (n=1)
+    Checkpoint OCI runtime: 10.181 s [10.181 s, 10.181 s] (n=1)
+    Restore command wall: 4.075 s [4.075 s, 4.075 s] (n=1)
+    Restore OCI runtime: 3.976 s [3.976 s, 3.976 s] (n=1)
+    Application resume: 158.1 ms [158.1 ms, 158.1 ms] (n=1)
+    Restore to health: 5.236 s [5.236 s, 5.236 s] (n=1)
+    Restore to first token: 5.271 s [5.271 s, 5.271 s] (n=1)
+    Restore to response complete: 5.275 s [5.275 s, 5.275 s] (n=1)
+    Request after restore: 38.4 ms [38.4 ms, 38.4 ms] (n=1)
+    CRIU freezing: 10.2 ms [10.2 ms, 10.2 ms] (n=1)
+    CRIU frozen: 10.144 s [10.144 s, 10.144 s] (n=1)
+    CRIU restore: 2.589 s [2.589 s, 2.589 s] (n=1)
+    CUDA checkpoint/checkpoint_devices: 762.6 ms [762.6 ms, 762.6 ms] (n=1); calls ok=3, unsupported=1, error=0
+    CUDA checkpoint/dump_devices_late: 240.3 ms [240.3 ms, 240.3 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA checkpoint/dump_finish: 0.0 ms [0.0 ms, 0.0 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA checkpoint/fini: 10.1 ms [10.1 ms, 10.1 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA checkpoint/init: 11.8 ms [11.8 ms, 11.8 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA checkpoint/pause_devices: 3.6 ms [3.6 ms, 3.6 ms] (n=1); calls ok=3, unsupported=1, error=0
+    CUDA restore/fini: 10.1 ms [10.1 ms, 10.1 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA restore/init: 11.8 ms [11.8 ms, 11.8 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA restore/restore_init: 0.0 ms [0.0 ms, 0.0 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA restore/resume_devices_late: 1.348 s [1.348 s, 1.348 s] (n=1); calls ok=3, unsupported=1, error=0
+
+  cuda-checkpoint / Uncompressed: n=1
+    INCONCLUSIVE: fewer than four measured trials; no backend ranking.
+    Checkpoint size: 12.64 GiB [12.64 GiB, 12.64 GiB] (n=1)
+    Size relative to baseline: 1.000x (0% saved)
+    Application checkpoint preparation: 2.536 s [2.536 s, 2.536 s] (n=1)
+    Checkpoint command wall: 35.095 s [35.095 s, 35.095 s] (n=1)
+    Checkpoint OCI runtime: 10.597 s [10.597 s, 10.597 s] (n=1)
+    Restore command wall: 4.831 s [4.831 s, 4.831 s] (n=1)
+    Restore OCI runtime: 4.736 s [4.736 s, 4.736 s] (n=1)
+    Application resume: 158.1 ms [158.1 ms, 158.1 ms] (n=1)
+    Restore to health: 5.991 s [5.991 s, 5.991 s] (n=1)
+    Restore to first token: 6.027 s [6.027 s, 6.027 s] (n=1)
+    Restore to response complete: 6.031 s [6.031 s, 6.031 s] (n=1)
+    Request after restore: 39.6 ms [39.6 ms, 39.6 ms] (n=1)
+    CRIU freezing: 272.2 ms [272.2 ms, 272.2 ms] (n=1)
+    CRIU frozen: 10.306 s [10.306 s, 10.306 s] (n=1)
+    CRIU restore: 2.573 s [2.573 s, 2.573 s] (n=1)
+    CUDA checkpoint/checkpoint_devices: 940.0 ms [940.0 ms, 940.0 ms] (n=1); calls ok=3, unsupported=1, error=0
+    CUDA checkpoint/dump_devices_late: 235.6 ms [235.6 ms, 235.6 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA checkpoint/dump_finish: 0.0 ms [0.0 ms, 0.0 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA checkpoint/fini: 0.0 ms [0.0 ms, 0.0 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA checkpoint/init: 2.1 ms [2.1 ms, 2.1 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA checkpoint/pause_devices: 265.6 ms [265.6 ms, 265.6 ms] (n=1); calls ok=3, unsupported=1, error=0
+    CUDA restore/fini: 0.0 ms [0.0 ms, 0.0 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA restore/init: 2.2 ms [2.2 ms, 2.2 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA restore/restore_init: 0.0 ms [0.0 ms, 0.0 ms] (n=1); calls ok=1, unsupported=0, error=0
+    CUDA restore/resume_devices_late: 2.134 s [2.134 s, 2.134 s] (n=1); calls ok=3, unsupported=1, error=0
+
+  PAIRED OCI DIFFERENCES: cuda-checkpoint / Uncompressed minus driver-api / Uncompressed
+  Positive means the first configuration was faster; negative means the second.
+    Checkpoint: +415.5 ms [+415.5 ms, +415.5 ms] (n=1)
+      INCONCLUSIVE: fewer than four complete pairs.
+    Restore: +759.9 ms [+759.9 ms, +759.9 ms] (n=1)
+      INCONCLUSIVE: fewer than four complete pairs.
+  Pairs use trial rounds; these are observed differences, not a significance test.
+Results written to /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron3-nano-4b-bf16-cuda-backends/results.json
+
+Completed. Results: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron3-nano-4b-bf16-cuda-backends/results.json

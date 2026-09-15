@@ -1,0 +1,59 @@
+container=sglang-criu-bench-398609-2
+
+podman ps:
+sglang-criu-bench-398609-2 Up 5 minutes
+
+last logs:
+ce Unavailable
+[2026-09-15 02:56:50] INFO:     127.0.0.1:42690 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:50] INFO:     127.0.0.1:42706 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:50] INFO:     127.0.0.1:42718 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42734 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42742 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42754 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42764 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42768 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42774 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42784 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42800 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42804 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42820 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42834 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42842 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42856 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42872 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42886 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42890 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42894 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42900 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42914 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42926 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42936 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42940 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42952 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42954 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42958 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42964 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42978 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:43042 - "POST /generate HTTP/1.1" 200 OK
+[2026-09-15 02:56:56] INFO:     127.0.0.1:42994 - "GET /health HTTP/1.1" 200 OK
+[2026-09-15 02:56:56] INFO:     127.0.0.1:48904 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-09-15 02:56:56] INFO:     127.0.0.1:48912 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-09-15 02:56:57] INFO:     127.0.0.1:48928 - "POST /pause_generation HTTP/1.1" 200 OK
+[2026-09-15 02:57:16] INFO:     127.0.0.1:48944 - "POST /release_memory_occupation HTTP/1.1" 200 OK
+[2026-09-15 03:00:07] INFO:     127.0.0.1:46118 - "POST /resume_memory_occupation HTTP/1.1" 200 OK
+[2026-09-15 03:00:07] INFO:     127.0.0.1:46120 - "POST /continue_generation HTTP/1.1" 200 OK
+[2026-09-15 03:00:08] INFO:     127.0.0.1:46126 - "GET /health HTTP/1.1" 200 OK
+[2026-09-15 03:00:08] INFO:     127.0.0.1:46142 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-09-15 02:56:53] Prefill batch, #new-seq: 1, #new-token: 6, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 0.59
+[2026-09-15 02:56:53] The server is fired up and ready to roll!
+[2026-09-15 02:56:56] Prefill batch, #new-seq: 1, #new-token: 1, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 0.39
+[2026-09-15 02:56:56] Prefill batch, #new-seq: 1, #new-token: 23, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 38.14
+[2026-09-15 02:56:56] Prefill batch, #new-seq: 1, #new-token: 23, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 414.80
+/usr/local/lib/python3.12/dist-packages/fastapi/routing.py:352: FastAPIDeprecationWarning: ORJSONResponse is deprecated, FastAPI now serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class. Read more in the FastAPI docs: https://fastapi.tiangolo.com/advanced/custom-response/#orjson-or-response-model and https://fastapi.tiangolo.com/tutorial/response-model/
+  return await dependant.call(**values)
+[2026-09-15 02:56:57] Reset HybridReqToTokenPool
+[2026-09-15 02:56:57] Cache flushed successfully!
+[2026-09-15 03:00:07] [continue_generation] torch.cuda.empty_cache() called: reserved 79508.0 MB -> 79508.0 MB (freed 0.0 MB)
+[2026-09-15 03:00:07] Prefill batch, #new-seq: 1, #new-token: 1, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 0.01
+[2026-09-15 03:00:08] Prefill batch, #new-seq: 1, #new-token: 23, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 23.06

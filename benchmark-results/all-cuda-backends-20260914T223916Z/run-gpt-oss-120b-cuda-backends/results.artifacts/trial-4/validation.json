@@ -1,0 +1,71 @@
+{
+  "cold": {
+    "request_us": 91195,
+    "request_to_headers_us": 28429,
+    "request_to_first_event_us": 28450,
+    "request_to_first_token_us": 40599,
+    "operation_to_request_us": 477615013,
+    "operation_to_headers_us": 477643443,
+    "operation_to_first_event_us": 477643464,
+    "operation_to_first_token_us": 477655612,
+    "operation_to_response_complete_us": 477706209,
+    "content": "Just respond.Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "Just respond.",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 74,
+      "total_tokens": 89,
+      "completion_tokens": 15,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 7
+    },
+    "completed": true
+  },
+  "before": {
+    "request_us": 91596,
+    "request_to_headers_us": 28022,
+    "request_to_first_event_us": 28034,
+    "request_to_first_token_us": 41077,
+    "operation_to_request_us": 477706286,
+    "operation_to_headers_us": 477734309,
+    "operation_to_first_event_us": 477734320,
+    "operation_to_first_token_us": 477747364,
+    "operation_to_response_complete_us": 477797882,
+    "content": "Just respond.Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "Just respond.",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 74,
+      "total_tokens": 89,
+      "completion_tokens": 15,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 7
+    },
+    "completed": true
+  },
+  "after": {
+    "request_us": 103981,
+    "request_to_headers_us": 39726,
+    "request_to_first_event_us": 39747,
+    "request_to_first_token_us": 51923,
+    "operation_to_request_us": 91885719,
+    "operation_to_headers_us": 91925446,
+    "operation_to_first_event_us": 91925467,
+    "operation_to_first_token_us": 91937643,
+    "operation_to_response_complete_us": 91989700,
+    "content": "Just respond.Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "Just respond.",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 74,
+      "total_tokens": 89,
+      "completion_tokens": 15,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 7
+    },
+    "completed": true
+  }
+}

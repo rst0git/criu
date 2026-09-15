@@ -1,0 +1,126 @@
+Results directory: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron35-lightning-30b-a3b-bf16-cuda-backends
+Model revision: a9904d24bcc1d289a1950fa9d2b978c47cf903b9
+
+Podman SGLang Checkpoint/Restore Benchmark
+  Kernel : 5.15.0-190-generic
+  CPU    : Intel(R) Xeon(R) Platinum 8468
+  Memory : 201289 MB
+  GPU    : NVIDIA H200
+  Accelerator: gpu
+  Podman : podman version 6.1.1
+  CRIU   : Version: 4.2.1
+GitID: v4.0-739-g66695dfca
+  Plugin : /var/tmp/criu/plugins/cuda
+  Runc conf: /etc/criu/runc.conf
+  Storage: local; archive compression=none
+  Restore cache: uncontrolled; offline=True
+  Artifacts: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron35-lightning-30b-a3b-bf16-cuda-backends/results.artifacts
+  Config : 1+1 iterations, modes=driver-api / Uncompressed,cuda-checkpoint / Uncompressed
+  Restore: decompress-threads=default (serial)
+  Server : http://127.0.0.1:30000, model=nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16, model-arg=model-path, memory-saver=on, launch-job=on
+  Request: max_tokens=32, temperature=0, warmup_requests=0
+
+  Trial 1/4: driver-api / Uncompressed (warmup, excluded)
+  Trial 1 artifacts: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron35-lightning-30b-a3b-bf16-cuda-backends/results.artifacts/trial-1
+  start server
+  waiting for sglang-criu-bench-398609-1 health on http://127.0.0.1:30000
+  pause and release application memory
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  checkpoint
+  checkpoint: 30s elapsed
+  checkpoint: 60s elapsed
+  checkpoint: 90s elapsed
+  checkpoint: 120s elapsed
+  checkpoint: 150s elapsed
+  condition restore cache
+  restore and validate inference
+  resume application
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-398609-1 health on http://127.0.0.1:30000
+
+  Trial 2/4: cuda-checkpoint / Uncompressed (warmup, excluded)
+  Trial 2 artifacts: /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron35-lightning-30b-a3b-bf16-cuda-backends/results.artifacts/trial-2
+  start server
+  waiting for sglang-criu-bench-398609-2 health on http://127.0.0.1:30000
+  pause and release application memory
+  SGLang memory saver: pause_generation
+  SGLang memory saver: release_memory_occupation
+  checkpoint
+  checkpoint: 30s elapsed
+  checkpoint: 60s elapsed
+  checkpoint: 90s elapsed
+  checkpoint: 120s elapsed
+  checkpoint: 150s elapsed
+  condition restore cache
+  restore and validate inference
+  resume application
+  SGLang memory saver: resume_memory_occupation
+  SGLang memory saver: continue_generation
+  waiting for restored sglang-criu-bench-398609-2 health on http://127.0.0.1:30000
+
+  ERROR: cuda-checkpoint / Uncompressed: deterministic validation response changed after restore: before_sha256=fda564ba3f7a0f028106d468420f674898ed99ac5bf2765ac9586206e39d73c5, after_sha256=334d016f755cd6dc58c53a86e183882f8ec14f52fb05345887c8a5edd42c87b7
+  Artifacts preserved in /var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-nemotron35-lightning-30b-a3b-bf16-cuda-backends/results.artifacts/trial-2
+container=sglang-criu-bench-398609-2
+
+podman ps:
+sglang-criu-bench-398609-2 Up 5 minutes
+
+last logs:
+ce Unavailable
+[2026-09-15 02:56:50] INFO:     127.0.0.1:42690 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:50] INFO:     127.0.0.1:42706 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:50] INFO:     127.0.0.1:42718 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42734 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42742 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42754 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42764 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42768 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42774 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42784 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42800 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:51] INFO:     127.0.0.1:42804 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42820 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42834 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42842 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42856 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42872 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42886 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42890 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42894 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42900 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:52] INFO:     127.0.0.1:42914 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42926 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42936 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42940 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42952 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42954 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42958 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42964 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:42978 - "GET /health HTTP/1.1" 503 Service Unavailable
+[2026-09-15 02:56:53] INFO:     127.0.0.1:43042 - "POST /generate HTTP/1.1" 200 OK
+[2026-09-15 02:56:56] INFO:     127.0.0.1:42994 - "GET /health HTTP/1.1" 200 OK
+[2026-09-15 02:56:56] INFO:     127.0.0.1:48904 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-09-15 02:56:56] INFO:     127.0.0.1:48912 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-09-15 02:56:57] INFO:     127.0.0.1:48928 - "POST /pause_generation HTTP/1.1" 200 OK
+[2026-09-15 02:57:16] INFO:     127.0.0.1:48944 - "POST /release_memory_occupation HTTP/1.1" 200 OK
+[2026-09-15 03:00:07] INFO:     127.0.0.1:46118 - "POST /resume_memory_occupation HTTP/1.1" 200 OK
+[2026-09-15 03:00:07] INFO:     127.0.0.1:46120 - "POST /continue_generation HTTP/1.1" 200 OK
+[2026-09-15 03:00:08] INFO:     127.0.0.1:46126 - "GET /health HTTP/1.1" 200 OK
+[2026-09-15 03:00:08] INFO:     127.0.0.1:46142 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-09-15 02:56:53] Prefill batch, #new-seq: 1, #new-token: 6, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 0.59
+[2026-09-15 02:56:53] The server is fired up and ready to roll!
+[2026-09-15 02:56:56] Prefill batch, #new-seq: 1, #new-token: 1, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 0.39
+[2026-09-15 02:56:56] Prefill batch, #new-seq: 1, #new-token: 23, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 38.14
+[2026-09-15 02:56:56] Prefill batch, #new-seq: 1, #new-token: 23, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 414.80
+/usr/local/lib/python3.12/dist-packages/fastapi/routing.py:352: FastAPIDeprecationWarning: ORJSONResponse is deprecated, FastAPI now serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class. Read more in the FastAPI docs: https://fastapi.tiangolo.com/advanced/custom-response/#orjson-or-response-model and https://fastapi.tiangolo.com/tutorial/response-model/
+  return await dependant.call(**values)
+[2026-09-15 02:56:57] Reset HybridReqToTokenPool
+[2026-09-15 02:56:57] Cache flushed successfully!
+[2026-09-15 03:00:07] [continue_generation] torch.cuda.empty_cache() called: reserved 79508.0 MB -> 79508.0 MB (freed 0.0 MB)
+[2026-09-15 03:00:07] Prefill batch, #new-seq: 1, #new-token: 1, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 0.01
+[2026-09-15 03:00:08] Prefill batch, #new-seq: 1, #new-token: 23, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 23.06
+Error: deterministic validation response changed after restore: before_sha256=fda564ba3f7a0f028106d468420f674898ed99ac5bf2765ac9586206e39d73c5, after_sha256=334d016f755cd6dc58c53a86e183882f8ec14f52fb05345887c8a5edd42c87b7
+cleanup: failed to remove sglang-criu-bench-398609-2: time="2026-09-15T03:00:19Z" level=warning msg="StopSignal SIGTERM failed to stop container sglang-criu-bench-398609-2 in 10 seconds, resorting to SIGKILL"
+Error: cannot remove container 20b93239cf594ae854763a26176834c9352ab8d5b127e1e7193bb01d9cdc6452 as it could not be stopped: given PID did not die within timeout

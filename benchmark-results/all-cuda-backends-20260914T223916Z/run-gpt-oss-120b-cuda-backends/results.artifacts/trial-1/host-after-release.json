@@ -1,0 +1,33 @@
+{
+  "memory": {
+    "MemAvailable_kib": 124661656,
+    "Cached_kib": 137668320,
+    "SwapFree_kib": 0,
+    "Dirty_kib": 308,
+    "Writeback_kib": 0
+  },
+  "storage": {
+    "path": "/var/lib/containers/storage/overlay-containers/df7ca3d882a65471ab27dd7660a9bfe6847de48fec9cbec20e2eadeea1ba32d5/userdata",
+    "device": 64513,
+    "free_bytes": 671231606784,
+    "total_bytes": 1560765693952,
+    "mount": {
+      "filesystems": [
+        {
+          "source": "/dev/vda1",
+          "fstype": "ext4",
+          "target": "/",
+          "options": "rw,relatime,discard,errors=remount-ro"
+        }
+      ]
+    }
+  },
+  "gpu_columns": [
+    "uuid",
+    "memory_used_mib",
+    "utilization_percent"
+  ],
+  "gpu": [
+    "GPU-e2dbc502-5b5a-da2b-3514-bd7521eee666, 4570, 0"
+  ]
+}

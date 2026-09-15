@@ -1,0 +1,71 @@
+{
+  "cold": {
+    "request_us": 91030,
+    "request_to_headers_us": 28038,
+    "request_to_first_event_us": 28060,
+    "request_to_first_token_us": 40447,
+    "operation_to_request_us": 509014768,
+    "operation_to_headers_us": 509042806,
+    "operation_to_first_event_us": 509042829,
+    "operation_to_first_token_us": 509055215,
+    "operation_to_response_complete_us": 509105799,
+    "content": "Just respond.Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "Just respond.",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 74,
+      "total_tokens": 89,
+      "completion_tokens": 15,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 7
+    },
+    "completed": true
+  },
+  "before": {
+    "request_us": 91708,
+    "request_to_headers_us": 28348,
+    "request_to_first_event_us": 28358,
+    "request_to_first_token_us": 41125,
+    "operation_to_request_us": 509105879,
+    "operation_to_headers_us": 509134227,
+    "operation_to_first_event_us": 509134238,
+    "operation_to_first_token_us": 509147004,
+    "operation_to_response_complete_us": 509197588,
+    "content": "Just respond.Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "Just respond.",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 74,
+      "total_tokens": 89,
+      "completion_tokens": 15,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 7
+    },
+    "completed": true
+  },
+  "after": {
+    "request_us": 96149,
+    "request_to_headers_us": 32938,
+    "request_to_first_event_us": 32959,
+    "request_to_first_token_us": 45494,
+    "operation_to_request_us": 89102166,
+    "operation_to_headers_us": 89135104,
+    "operation_to_first_event_us": 89135125,
+    "operation_to_first_token_us": 89147661,
+    "operation_to_response_complete_us": 89198315,
+    "content": "Just respond.Hello!",
+    "output_content": "Hello!",
+    "reasoning_content": "Just respond.",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 74,
+      "total_tokens": 89,
+      "completion_tokens": 15,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 7
+    },
+    "completed": true
+  }
+}

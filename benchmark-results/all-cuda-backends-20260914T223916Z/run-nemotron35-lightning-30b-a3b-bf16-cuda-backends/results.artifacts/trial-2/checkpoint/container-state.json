@@ -1,0 +1,10 @@
+{
+  "id": "20b93239cf594ae854763a26176834c9352ab8d5b127e1e7193bb01d9cdc6452",
+  "state": {
+    "Status": "running",
+    "Pid": 402392,
+    "ExitCode": 0,
+    "Checkpointed": null,
+    "Restored": true
+  }
+}

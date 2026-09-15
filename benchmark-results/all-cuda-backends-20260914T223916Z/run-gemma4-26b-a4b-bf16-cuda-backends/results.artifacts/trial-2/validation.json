@@ -1,0 +1,71 @@
+{
+  "cold": {
+    "request_us": 65797,
+    "request_to_headers_us": 53991,
+    "request_to_first_event_us": 54013,
+    "request_to_first_token_us": 54047,
+    "operation_to_request_us": 226708265,
+    "operation_to_headers_us": 226762257,
+    "operation_to_first_event_us": 226762279,
+    "operation_to_first_token_us": 226762313,
+    "operation_to_response_complete_us": 226774063,
+    "content": "Hello there!",
+    "output_content": "Hello there!",
+    "reasoning_content": "",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 20,
+      "total_tokens": 24,
+      "completion_tokens": 4,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 0
+    },
+    "completed": true
+  },
+  "before": {
+    "request_us": 62406,
+    "request_to_headers_us": 50074,
+    "request_to_first_event_us": 50092,
+    "request_to_first_token_us": 50139,
+    "operation_to_request_us": 226774135,
+    "operation_to_headers_us": 226824209,
+    "operation_to_first_event_us": 226824227,
+    "operation_to_first_token_us": 226824275,
+    "operation_to_response_complete_us": 226836541,
+    "content": "Hello there!",
+    "output_content": "Hello there!",
+    "reasoning_content": "",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 20,
+      "total_tokens": 24,
+      "completion_tokens": 4,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 0
+    },
+    "completed": true
+  },
+  "after": {
+    "request_us": 180373,
+    "request_to_headers_us": 166029,
+    "request_to_first_event_us": 166050,
+    "request_to_first_token_us": 166099,
+    "operation_to_request_us": 18642525,
+    "operation_to_headers_us": 18808555,
+    "operation_to_first_event_us": 18808576,
+    "operation_to_first_token_us": 18808625,
+    "operation_to_response_complete_us": 18822899,
+    "content": "Hello there!",
+    "output_content": "Hello there!",
+    "reasoning_content": "",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 20,
+      "total_tokens": 24,
+      "completion_tokens": 4,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 0
+    },
+    "completed": true
+  }
+}

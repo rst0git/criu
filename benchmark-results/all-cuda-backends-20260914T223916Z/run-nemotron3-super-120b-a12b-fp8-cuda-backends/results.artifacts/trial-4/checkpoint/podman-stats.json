@@ -1,0 +1,17 @@
+{
+  "podman_checkpoint_duration": 285679446,
+  "container_statistics": [
+    {
+      "Id": "d443e7262b0313c09850140cbfa9460ec08eaaf0b2f4d9f4619a15f23deb1715",
+      "runtime_checkpoint_duration": 261805662,
+      "criu_statistics": {
+        "freezing_time": 10080,
+        "frozen_time": 261765115,
+        "memdump_time": 8841519,
+        "memwrite_time": 8146980,
+        "pages_scanned": 48203200,
+        "pages_written": 1345121
+      }
+    }
+  ]
+}

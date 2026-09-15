@@ -1,0 +1,620 @@
+{
+  "checkpoint_storage": "local",
+  "checkpoint_size": 73370212559,
+  "checkpoint_size_scope": "criu_images",
+  "checkpoint_disk_bytes": 73372270592,
+  "archive_size": null,
+  "inventory_compress_mode": 0,
+  "cuda_timings": [
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "init",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 2304
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 361589,
+      "ret": 0,
+      "elapsed_us": 83052
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 361846,
+      "ret": -95,
+      "elapsed_us": 28411
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 361847,
+      "ret": 0,
+      "elapsed_us": 82675
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362494,
+      "ret": 0,
+      "elapsed_us": 79076
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362545,
+      "ret": -95,
+      "elapsed_us": 28114
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362547,
+      "ret": -95,
+      "elapsed_us": 26544
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362549,
+      "ret": -95,
+      "elapsed_us": 26481
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362551,
+      "ret": -95,
+      "elapsed_us": 26528
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362553,
+      "ret": -95,
+      "elapsed_us": 27679
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362555,
+      "ret": -95,
+      "elapsed_us": 27250
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362558,
+      "ret": -95,
+      "elapsed_us": 26555
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362560,
+      "ret": -95,
+      "elapsed_us": 26630
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362562,
+      "ret": -95,
+      "elapsed_us": 26763
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362564,
+      "ret": -95,
+      "elapsed_us": 26357
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362566,
+      "ret": -95,
+      "elapsed_us": 25864
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362568,
+      "ret": -95,
+      "elapsed_us": 26552
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362570,
+      "ret": -95,
+      "elapsed_us": 26374
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362572,
+      "ret": -95,
+      "elapsed_us": 26024
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362574,
+      "ret": -95,
+      "elapsed_us": 26647
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 362576,
+      "ret": -95,
+      "elapsed_us": 27232
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "pause_devices",
+      "pid": 361848,
+      "ret": 0,
+      "elapsed_us": 79716
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 361589,
+      "ret": 0,
+      "elapsed_us": 76970
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 361846,
+      "ret": -95,
+      "elapsed_us": 26081
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 361847,
+      "ret": 0,
+      "elapsed_us": 3210870
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362494,
+      "ret": 0,
+      "elapsed_us": 78448
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362545,
+      "ret": -95,
+      "elapsed_us": 27374
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362547,
+      "ret": -95,
+      "elapsed_us": 26195
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362549,
+      "ret": -95,
+      "elapsed_us": 26388
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362551,
+      "ret": -95,
+      "elapsed_us": 26192
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362553,
+      "ret": -95,
+      "elapsed_us": 27277
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362555,
+      "ret": -95,
+      "elapsed_us": 26382
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362558,
+      "ret": -95,
+      "elapsed_us": 26280
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362560,
+      "ret": -95,
+      "elapsed_us": 26289
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362562,
+      "ret": -95,
+      "elapsed_us": 26526
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362564,
+      "ret": -95,
+      "elapsed_us": 27074
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362566,
+      "ret": -95,
+      "elapsed_us": 26459
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362568,
+      "ret": -95,
+      "elapsed_us": 26669
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362570,
+      "ret": -95,
+      "elapsed_us": 26534
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362572,
+      "ret": -95,
+      "elapsed_us": 26159
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362574,
+      "ret": -95,
+      "elapsed_us": 26603
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 362576,
+      "ret": -95,
+      "elapsed_us": 27515
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "checkpoint_devices",
+      "pid": 361848,
+      "ret": 0,
+      "elapsed_us": 85409
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "dump_devices_late",
+      "pid": 361589,
+      "ret": 0,
+      "elapsed_us": 292972
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "dump_finish",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 1
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "cuda-checkpoint",
+      "phase": "fini",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 10
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "init",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 2343
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "restore_init",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 21
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363275,
+      "ret": 0,
+      "elapsed_us": 743349
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363286,
+      "ret": 0,
+      "elapsed_us": 186746
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363287,
+      "ret": 0,
+      "elapsed_us": 5298934
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363289,
+      "ret": 0,
+      "elapsed_us": 143089
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363290,
+      "ret": -95,
+      "elapsed_us": 26328
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363291,
+      "ret": -95,
+      "elapsed_us": 27917
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363292,
+      "ret": -95,
+      "elapsed_us": 25751
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363293,
+      "ret": -95,
+      "elapsed_us": 26202
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363294,
+      "ret": -95,
+      "elapsed_us": 26611
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363295,
+      "ret": -95,
+      "elapsed_us": 26227
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363296,
+      "ret": -95,
+      "elapsed_us": 26469
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363297,
+      "ret": -95,
+      "elapsed_us": 26292
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363298,
+      "ret": -95,
+      "elapsed_us": 26031
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363299,
+      "ret": -95,
+      "elapsed_us": 26015
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363300,
+      "ret": -95,
+      "elapsed_us": 26314
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363301,
+      "ret": -95,
+      "elapsed_us": 26635
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363302,
+      "ret": -95,
+      "elapsed_us": 27489
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363303,
+      "ret": -95,
+      "elapsed_us": 26093
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363304,
+      "ret": -95,
+      "elapsed_us": 26107
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363305,
+      "ret": -95,
+      "elapsed_us": 25923
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "resume_devices_late",
+      "pid": 363288,
+      "ret": -95,
+      "elapsed_us": 26950
+    },
+    {
+      "operation": "restore",
+      "backend": "cuda-checkpoint",
+      "phase": "fini",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 11
+    }
+  ],
+  "checkpoint_runtime_us": 119233794,
+  "criu_dump_stats": {
+    "freezing_time": 791552,
+    "frozen_time": 118283845,
+    "memdump_time": 25425541,
+    "memwrite_time": 24005152,
+    "pages_scanned": 105563629,
+    "pages_written": 3151132
+  },
+  "restore_runtime_us": 65326660,
+  "criu_restore_stats": {
+    "pages_compared": 1388221,
+    "pages_skipped_cow": 1341617,
+    "forking_time": 80227,
+    "restore_time": 58465734,
+    "pages_restored": 1809515
+  },
+  "application_prepare_us": 20555956,
+  "application_resume_us": 1128951,
+  "checkpoint_wall_us": 166960878,
+  "restore_wall_us": 65438491,
+  "server_start_to_health_us": 166411631,
+  "cold_start_to_first_token_us": 166504007,
+  "cold_start_to_response_complete_us": 166515372,
+  "cold_start_request_ttft_us": 92012,
+  "restore_to_health_us": 67570084,
+  "restore_to_first_token_us": 67668570,
+  "restore_to_response_complete_us": 67679175,
+  "restore_request_ttft_us": 98388,
+  "pre_request_us": 103406,
+  "post_request_us": 108993,
+  "checkpoint_stats": "{\n    \"podman_checkpoint_duration\": 166919556,\n    \"container_statistics\": [\n        {\n            \"Id\": \"09be3509cc0cfbdfadfa8170579fd11d6735fa0ecc49d5071e049166afd189cd\",\n            \"runtime_checkpoint_duration\": 119233794,\n            \"criu_statistics\": {\n                \"freezing_time\": 791552,\n                \"frozen_time\": 118283845,\n                \"memdump_time\": 25425541,\n                \"memwrite_time\": 24005152,\n                \"pages_scanned\": 105563629,\n                \"pages_written\": 3151132\n            }\n        }\n    ]\n}",
+  "restore_stats": "{\n    \"podman_restore_duration\": 65399387,\n    \"container_statistics\": [\n        {\n            \"Id\": \"09be3509cc0cfbdfadfa8170579fd11d6735fa0ecc49d5071e049166afd189cd\",\n            \"runtime_restore_duration\": 65326660,\n            \"criu_statistics\": {\n                \"pages_compared\": 1388221,\n                \"pages_skipped_cow\": 1341617,\n                \"forking_time\": 80227,\n                \"restore_time\": 58465734,\n                \"pages_restored\": 1809515\n            }\n        }\n    ]\n}",
+  "validation_response_sha256": "334d016f755cd6dc58c53a86e183882f8ec14f52fb05345887c8a5edd42c87b7",
+  "cache_policy": "uncontrolled",
+  "gpu_state": "released",
+  "checkpoint_boundary": "between completed requests",
+  "artifacts": "/var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-glm47-flash-cuda-backends/results.artifacts/trial-3",
+  "valid": true,
+  "framework": "sglang",
+  "container_name": null,
+  "trial": 3,
+  "configuration": {
+    "mode": "uncompressed",
+    "block_size": 0,
+    "cuda_backend": "cuda-checkpoint",
+    "cuda_timings": true,
+    "criu_libdir": "/var/tmp/criu/plugins/cuda"
+  },
+  "warmup": false
+}

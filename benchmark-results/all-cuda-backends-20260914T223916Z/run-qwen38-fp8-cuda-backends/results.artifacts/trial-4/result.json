@@ -1,0 +1,620 @@
+{
+  "checkpoint_storage": "local",
+  "checkpoint_size": 49912479010,
+  "checkpoint_size_scope": "criu_images",
+  "checkpoint_disk_bytes": 49914818560,
+  "archive_size": null,
+  "inventory_compress_mode": 0,
+  "cuda_timings": [
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "init",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 11710
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 434345,
+      "ret": 0,
+      "elapsed_us": 2511
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 434575,
+      "ret": -95,
+      "elapsed_us": 46
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 434576,
+      "ret": 0,
+      "elapsed_us": 703
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436466,
+      "ret": 0,
+      "elapsed_us": 396
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436506,
+      "ret": -95,
+      "elapsed_us": 38
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436508,
+      "ret": -95,
+      "elapsed_us": 36
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436510,
+      "ret": -95,
+      "elapsed_us": 39
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436512,
+      "ret": -95,
+      "elapsed_us": 39
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436514,
+      "ret": -95,
+      "elapsed_us": 35
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436516,
+      "ret": -95,
+      "elapsed_us": 38
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436518,
+      "ret": -95,
+      "elapsed_us": 35
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436520,
+      "ret": -95,
+      "elapsed_us": 34
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436522,
+      "ret": -95,
+      "elapsed_us": 33
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436524,
+      "ret": -95,
+      "elapsed_us": 34
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436526,
+      "ret": -95,
+      "elapsed_us": 33
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436528,
+      "ret": -95,
+      "elapsed_us": 34
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436530,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436532,
+      "ret": -95,
+      "elapsed_us": 34
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436534,
+      "ret": -95,
+      "elapsed_us": 33
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 436536,
+      "ret": -95,
+      "elapsed_us": 34
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "pause_devices",
+      "pid": 434577,
+      "ret": 0,
+      "elapsed_us": 589
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 434345,
+      "ret": 0,
+      "elapsed_us": 727220
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 434575,
+      "ret": -95,
+      "elapsed_us": 52
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 434576,
+      "ret": 0,
+      "elapsed_us": 2364633
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436466,
+      "ret": 0,
+      "elapsed_us": 24576
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436506,
+      "ret": -95,
+      "elapsed_us": 49
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436508,
+      "ret": -95,
+      "elapsed_us": 36
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436510,
+      "ret": -95,
+      "elapsed_us": 34
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436512,
+      "ret": -95,
+      "elapsed_us": 31
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436514,
+      "ret": -95,
+      "elapsed_us": 30
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436516,
+      "ret": -95,
+      "elapsed_us": 30
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436518,
+      "ret": -95,
+      "elapsed_us": 31
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436520,
+      "ret": -95,
+      "elapsed_us": 30
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436522,
+      "ret": -95,
+      "elapsed_us": 30
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436524,
+      "ret": -95,
+      "elapsed_us": 30
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436526,
+      "ret": -95,
+      "elapsed_us": 29
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436528,
+      "ret": -95,
+      "elapsed_us": 31
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436530,
+      "ret": -95,
+      "elapsed_us": 30
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436532,
+      "ret": -95,
+      "elapsed_us": 30
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436534,
+      "ret": -95,
+      "elapsed_us": 29
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 436536,
+      "ret": -95,
+      "elapsed_us": 30
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "checkpoint_devices",
+      "pid": 434577,
+      "ret": 0,
+      "elapsed_us": 41924
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "dump_devices_late",
+      "pid": 434345,
+      "ret": 0,
+      "elapsed_us": 236859
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "dump_finish",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 1
+    },
+    {
+      "operation": "checkpoint",
+      "backend": "driver-api",
+      "phase": "fini",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 10105
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "init",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 11849
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "restore_init",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 18
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436866,
+      "ret": 0,
+      "elapsed_us": 579076
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436877,
+      "ret": 0,
+      "elapsed_us": 34311
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436878,
+      "ret": 0,
+      "elapsed_us": 3266576
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436880,
+      "ret": 0,
+      "elapsed_us": 36061
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436881,
+      "ret": -95,
+      "elapsed_us": 43
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436882,
+      "ret": -95,
+      "elapsed_us": 45
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436883,
+      "ret": -95,
+      "elapsed_us": 45
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436884,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436885,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436886,
+      "ret": -95,
+      "elapsed_us": 33
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436887,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436888,
+      "ret": -95,
+      "elapsed_us": 31
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436889,
+      "ret": -95,
+      "elapsed_us": 31
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436890,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436891,
+      "ret": -95,
+      "elapsed_us": 31
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436892,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436893,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436894,
+      "ret": -95,
+      "elapsed_us": 33
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436895,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436896,
+      "ret": -95,
+      "elapsed_us": 32
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "resume_devices_late",
+      "pid": 436879,
+      "ret": -95,
+      "elapsed_us": 36
+    },
+    {
+      "operation": "restore",
+      "backend": "driver-api",
+      "phase": "fini",
+      "pid": 0,
+      "ret": 0,
+      "elapsed_us": 10138
+    }
+  ],
+  "checkpoint_runtime_us": 57035312,
+  "criu_dump_stats": {
+    "freezing_time": 14056,
+    "frozen_time": 56922887,
+    "memdump_time": 32079582,
+    "memwrite_time": 30403965,
+    "pages_scanned": 110826115,
+    "pages_written": 4711887
+  },
+  "restore_runtime_us": 11890068,
+  "criu_restore_stats": {
+    "pages_compared": 1386309,
+    "pages_skipped_cow": 1376567,
+    "forking_time": 82604,
+    "restore_time": 7931354,
+    "pages_restored": 3335320
+  },
+  "application_prepare_us": 9495504,
+  "application_resume_us": 583657,
+  "checkpoint_wall_us": 115354887,
+  "restore_wall_us": 11988178,
+  "server_start_to_health_us": 278179244,
+  "cold_start_to_first_token_us": 278228319,
+  "cold_start_to_response_complete_us": 278246908,
+  "cold_start_request_ttft_us": 48660,
+  "restore_to_health_us": 13574114,
+  "restore_to_first_token_us": 13624639,
+  "restore_to_response_complete_us": 13643602,
+  "restore_request_ttft_us": 50424,
+  "pre_request_us": 70104,
+  "post_request_us": 69387,
+  "checkpoint_stats": "{\n    \"podman_checkpoint_duration\": 115316062,\n    \"container_statistics\": [\n        {\n            \"Id\": \"956039da671e2140c79968308c02628f3a3fe3734db3cdf096512e9e89e44af2\",\n            \"runtime_checkpoint_duration\": 57035312,\n            \"criu_statistics\": {\n                \"freezing_time\": 14056,\n                \"frozen_time\": 56922887,\n                \"memdump_time\": 32079582,\n                \"memwrite_time\": 30403965,\n                \"pages_scanned\": 110826115,\n                \"pages_written\": 4711887\n            }\n        }\n    ]\n}",
+  "restore_stats": "{\n    \"podman_restore_duration\": 11950406,\n    \"container_statistics\": [\n        {\n            \"Id\": \"956039da671e2140c79968308c02628f3a3fe3734db3cdf096512e9e89e44af2\",\n            \"runtime_restore_duration\": 11890068,\n            \"criu_statistics\": {\n                \"pages_compared\": 1386309,\n                \"pages_skipped_cow\": 1376567,\n                \"forking_time\": 82604,\n                \"restore_time\": 7931354,\n                \"pages_restored\": 3335320\n            }\n        }\n    ]\n}",
+  "validation_response_sha256": "334d016f755cd6dc58c53a86e183882f8ec14f52fb05345887c8a5edd42c87b7",
+  "cache_policy": "uncontrolled",
+  "gpu_state": "released",
+  "checkpoint_boundary": "between completed requests",
+  "artifacts": "/var/tmp/criu/benchmark-results/all-cuda-backends-20260914T223916Z/run-qwen38-fp8-cuda-backends/results.artifacts/trial-4",
+  "valid": true,
+  "framework": "sglang",
+  "container_name": null,
+  "trial": 4,
+  "configuration": {
+    "mode": "uncompressed",
+    "block_size": 0,
+    "cuda_backend": "driver-api",
+    "cuda_timings": true,
+    "criu_libdir": "/var/tmp/criu/plugins/cuda"
+  },
+  "warmup": false
+}

@@ -1,0 +1,10 @@
+{
+  "id": "df7ca3d882a65471ab27dd7660a9bfe6847de48fec9cbec20e2eadeea1ba32d5",
+  "state": {
+    "Status": "exited",
+    "Pid": 365981,
+    "ExitCode": 0,
+    "Checkpointed": true,
+    "Restored": null
+  }
+}
