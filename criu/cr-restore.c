@@ -2054,6 +2054,48 @@ static void reap_zombies(void)
 	}
 }
 
+static void kill_restored_tasks(bool reap_tracees)
+{
+	/*
+	 * The processes can be killed only when all of them have been created,
+	 * otherwise an external processes can be killed.
+	 */
+	if (vpid(root_item) == INIT_PID) {
+		pid_t init_pid = root_item->pid->real;
+		siginfo_t info;
+		int status;
+		pid_t pid;
+
+		/* Kill init */
+		if (init_pid > 0)
+			kill(init_pid, SIGKILL);
+
+		/*
+		 * Init finishes exiting only after the rest of its pid namespace
+		 * is collected, and only we can collect a zombie we trace. After
+		 * attachment is attempted, the SIGCHLD handler is off and helper
+		 * daemons are stopped. Reap tracees until init exits, if init is
+		 * still ours to collect, even if attachment only partly succeeded.
+		 */
+		if (reap_tracees &&
+		    !waitid(P_PID, init_pid, &info, WEXITED | WNOHANG | WNOWAIT | __WALL)) {
+			do
+				pid = waitpid(-1, &status, __WALL);
+			while (pid > 0 && (pid != init_pid || WIFSTOPPED(status)));
+		} else {
+			pid = waitpid(init_pid, &status, 0);
+		}
+		if (pid < 0)
+			pr_warn("Unable to wait %d: %s\n", init_pid, strerror(errno));
+	} else {
+		struct pstree_item *pi;
+
+		for_each_pstree_item(pi)
+			if (pi->pid->real > 0)
+				kill(pi->pid->real, SIGKILL);
+	}
+}
+
 static int restore_root_task(struct pstree_item *init)
 {
 	int ret, fd, mnt_ns_fd = -1;
@@ -2271,7 +2313,8 @@ skip_ns_bouncing:
 	 * Network is unlocked. If something fails below - we lose data
 	 * or a connection.
 	 */
-	attach_to_tasks(root_seized);
+	if (attach_to_tasks(root_seized))
+		goto out_kill_network_unlocked;
 
 	if (restore_switch_stage(CR_STATE_RESTORE_CREDS))
 		goto out_kill_network_unlocked;
@@ -2360,27 +2403,10 @@ skip_ns_bouncing:
 
 out_kill_network_unlocked:
 	pr_err("Killing processes because of failure on restore.\nThe Network was unlocked so some data or a connection may have been lost.\n");
+	kill_restored_tasks(true);
+	goto out;
 out_kill:
-	/*
-	 * The processes can be killed only when all of them have been created,
-	 * otherwise an external processes can be killed.
-	 */
-	if (vpid(root_item) == INIT_PID) {
-		int status;
-
-		/* Kill init */
-		if (root_item->pid->real > 0)
-			kill(root_item->pid->real, SIGKILL);
-
-		if (waitpid(root_item->pid->real, &status, 0) < 0)
-			pr_warn("Unable to wait %d: %s\n", root_item->pid->real, strerror(errno));
-	} else {
-		struct pstree_item *pi;
-
-		for_each_pstree_item(pi)
-			if (pi->pid->real > 0)
-				kill(pi->pid->real, SIGKILL);
-	}
+	kill_restored_tasks(false);
 
 out:
 	xfree(pids);
